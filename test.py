@@ -16,11 +16,9 @@ import torch.utils.data
 from util import config, transform
 from util.common_util import AverageMeter, intersectionAndUnion, check_makedirs
 from util.voxelize import voxelize
-from util.voxelize import proposed_voxelize
 import torch_points_kernels as tp
 import torch.nn.functional as F
-from lib.pointops2.functions import pointops
-from visualization import downsample_and_visualize
+
 random.seed(123)
 np.random.seed(123)
 
@@ -28,7 +26,8 @@ np.random.seed(123)
 def get_parser():
     parser = argparse.ArgumentParser(description='PyTorch Point Cloud Classification / Semantic Segmentation')
     parser.add_argument('--config', type=str, default='config/s3dis/s3dis_pointweb.yaml', help='config file')
-    parser.add_argument('opts', help='see config/s3dis/s3dis_pointweb.yaml for all options', default=None, nargs=argparse.REMAINDER)
+    parser.add_argument('opts', help='see config/s3dis/s3dis_pointweb.yaml for all options', default=None,
+                        nargs=argparse.REMAINDER)
     args = parser.parse_args()
     assert args.config is not None
     cfg = config.load_cfg_from_cfg_file(args.config)
@@ -51,7 +50,6 @@ def get_logger():
 def main():
     global args, logger
     args = get_parser()
-    this_args = args
     logger = get_logger()
     logger.info(args)
     assert args.classes > 1
@@ -64,36 +62,39 @@ def main():
         from model.stratified_transformer import Stratified
 
         args.patch_size = args.grid_size * args.patch_size
-        args.window_size = [args.patch_size * args.window_size * (2**i) for i in range(args.num_layers)]
-        args.grid_sizes = [args.patch_size * (2**i) for i in range(args.num_layers)]
-        args.quant_sizes = [args.quant_size * (2**i) for i in range(args.num_layers)]
+        args.window_size = [args.patch_size * args.window_size * (2 ** i) for i in range(args.num_layers)]
+        args.grid_sizes = [args.patch_size * (2 ** i) for i in range(args.num_layers)]
+        args.quant_sizes = [args.quant_size * (2 ** i) for i in range(args.num_layers)]
 
         model = Stratified(args.downsample_scale, args.depths, args.channels, args.num_heads, args.window_size, \
-            args.up_k, args.grid_sizes, args.quant_sizes, rel_query=args.rel_query, \
-            rel_key=args.rel_key, rel_value=args.rel_value, drop_path_rate=args.drop_path_rate, concat_xyz=args.concat_xyz, num_classes=args.classes, \
-            ratio=args.ratio, k=args.k, prev_grid_size=args.grid_size, sigma=1.0, num_layers=args.num_layers, stem_transformer=args.stem_transformer)
+                           args.up_k, args.grid_sizes, args.quant_sizes, rel_query=args.rel_query, \
+                           rel_key=args.rel_key, rel_value=args.rel_value, drop_path_rate=args.drop_path_rate,
+                           concat_xyz=args.concat_xyz, num_classes=args.classes, \
+                           ratio=args.ratio, k=args.k, prev_grid_size=args.grid_size, sigma=1.0,
+                           num_layers=args.num_layers, stem_transformer=args.stem_transformer)
 
     elif args.arch == 'swin3d_transformer':
 
         from model.swin3d_transformer import Swin
 
         args.patch_size = args.grid_size * args.patch_size
-        args.window_sizes = [args.patch_size * args.window_size * (2**i) for i in range(args.num_layers)]
-        args.grid_sizes = [args.patch_size * (2**i) for i in range(args.num_layers)]
-        args.quant_sizes = [args.quant_size * (2**i) for i in range(args.num_layers)]
+        args.window_sizes = [args.patch_size * args.window_size * (2 ** i) for i in range(args.num_layers)]
+        args.grid_sizes = [args.patch_size * (2 ** i) for i in range(args.num_layers)]
+        args.quant_sizes = [args.quant_size * (2 ** i) for i in range(args.num_layers)]
 
         model = Swin(args.depths, args.channels, args.num_heads, \
-            args.window_sizes, args.up_k, args.grid_sizes, args.quant_sizes, rel_query=args.rel_query, \
-            rel_key=args.rel_key, rel_value=args.rel_value, drop_path_rate=args.drop_path_rate, \
-            concat_xyz=args.concat_xyz, num_classes=args.classes, \
-            ratio=args.ratio, k=args.k, prev_grid_size=args.grid_size, sigma=1.0, num_layers=args.num_layers, stem_transformer=args.stem_transformer)
+                     args.window_sizes, args.up_k, args.grid_sizes, args.quant_sizes, rel_query=args.rel_query, \
+                     rel_key=args.rel_key, rel_value=args.rel_value, drop_path_rate=args.drop_path_rate, \
+                     concat_xyz=args.concat_xyz, num_classes=args.classes, \
+                     ratio=args.ratio, k=args.k, prev_grid_size=args.grid_size, sigma=1.0, num_layers=args.num_layers,
+                     stem_transformer=args.stem_transformer)
 
     else:
         raise Exception('architecture {} not supported yet'.format(args.arch))
 
     model = model.cuda()
 
-    #model = torch.nn.DataParallel(model.cuda())
+    # model = torch.nn.DataParallel(model.cuda())
     logger.info(model)
     criterion = nn.CrossEntropyLoss(ignore_index=args.ignore_label).cuda()
     names = [line.rstrip('\n') for line in open(args.names_path)]
@@ -111,39 +112,37 @@ def main():
     else:
         raise RuntimeError("=> no checkpoint found at '{}'".format(args.model_path))
 
-
     # transform
     test_transform_set = []
-    test_transform_set.append(None) # for None aug
-    #test_transform_set.append(None) # for permutate
+    test_transform_set.append(None)  # for None aug
+    test_transform_set.append(None)  # for permutate
 
     # aug 90
     logger.info("augmentation roate")
     logger.info("rotate_angle: {}".format(90))
     test_transform = transform.RandomRotate(rotate_angle=90, along_z=args.get('rotate_along_z', True))
-    #test_transform_set.append(test_transform)
+    test_transform_set.append(test_transform)
 
     # aug 180
     logger.info("augmentation roate")
     logger.info("rotate_angle: {}".format(180))
     test_transform = transform.RandomRotate(rotate_angle=180, along_z=args.get('rotate_along_z', True))
-    #test_transform_set.append(test_transform)
+    test_transform_set.append(test_transform)
 
     # aug 270
     logger.info("augmentation roate")
     logger.info("rotate_angle: {}".format(270))
     test_transform = transform.RandomRotate(rotate_angle=270, along_z=args.get('rotate_along_z', True))
-    #test_transform_set.append(test_transform)
+    test_transform_set.append(test_transform)
 
     if args.data_name == 's3dis':
-
         # shift +0.2
         test_transform = transform.RandomShift_test(shift_range=0.2)
-        #test_transform_set.append(test_transform)
+        test_transform_set.append(test_transform)
 
         # shift -0.2
         test_transform = transform.RandomShift_test(shift_range=-0.2)
-        #test_transform_set.append(test_transform)
+        test_transform_set.append(test_transform)
 
     test(model, criterion, names, test_transform_set)
 
@@ -162,6 +161,56 @@ def data_prepare():
     return data_list
 
 
+import numpy as np
+
+def add_cluster_with_features(coord, feat, num_points=2000, spread=0.02, feature_mode='zero'):
+    """
+    Adds a cluster of points near the middle of the original coord array,
+    and adds corresponding dummy features to feat.
+
+    Args:
+        coord (np.ndarray): Original coordinates, shape (n, 3)
+        feat (np.ndarray): Original features, shape (n, d)
+        num_points (int): Number of points to add
+        spread (float): Max deviation from center in each axis
+        feature_mode (str): 'zero' (default), 'random', or 'mean'
+
+    Returns:
+        new_coord (np.ndarray): Updated coordinates, shape (n + num_points, 3)
+        new_feat (np.ndarray): Updated features, shape (n + num_points, d)
+        added_cluster (np.ndarray): The newly added cluster points
+        added_features (np.ndarray): The corresponding dummy features
+    """
+    assert coord.shape[0] == feat.shape[0], "coord and feat must have the same number of rows"
+    assert coord.shape[1] == 3, "coord must be of shape (n, 3)"
+
+    n, d = feat.shape
+
+    # Step 1: Find middle point in coordinate space
+    center = (coord.min(axis=0) + coord.max(axis=0)) / 2
+
+    # Step 2: Generate cluster near the center
+    added_cluster = center + np.random.uniform(-spread, spread, size=(num_points, 3))
+
+    # Step 3: Generate dummy features
+    if feature_mode == 'zero':
+        added_features = np.zeros((num_points, d))
+    elif feature_mode == 'random':
+        added_features = np.random.rand(num_points, d)
+    elif feature_mode == 'mean':
+        mean_feat = feat.mean(axis=0)
+        added_features = np.tile(mean_feat, (num_points, 1))
+    else:
+        raise ValueError(f"Unknown feature_mode: {feature_mode}")
+
+    # Step 4: Concatenate to original arrays
+    new_coord = np.vstack((coord, added_cluster))
+    new_feat = np.vstack((feat, added_features))
+
+    return new_coord, new_feat, added_cluster, added_features
+
+
+
 def data_load(data_name, transform):
     if args.data_name == 's3dis':
         data_path = os.path.join(args.data_root, data_name + '.npy')
@@ -172,6 +221,7 @@ def data_load(data_name, transform):
         data = torch.load(data_path)  # xyzrgbl, N*7
         coord, feat, label = data[0], data[1], data[2]
         # print("type(coord): {}".format(type(coord)))
+    coord, feat, _, _ = add_cluster_with_features(coord, feat)
 
     if transform:
         coord, feat = transform(coord, feat)
@@ -180,13 +230,7 @@ def data_load(data_name, transform):
     if args.voxel_size:
         coord_min = np.min(coord, 0)
         coord -= coord_min
-        #idx_sort2, count2 = proposed_voxelize(coord, args.voxel_size, mode=1)
         idx_sort, count = voxelize(coord, args.voxel_size, mode=1)
-        #print("------------------")
-        #print(max(count))
-        #print(max(count2))
-        #print("------------------")
-
         for i in range(count.max()):
             idx_select = np.cumsum(np.insert(count, 0, 0)[0:-1]) + i % count
             idx_part = idx_sort[idx_select]
@@ -205,8 +249,6 @@ def input_normalize(coord, feat):
 
 
 def test(model, criterion, names, test_transform_set):
-    import plotly.graph_objects as go
-    this_args = args
     logger.info('>>>>>>>>>>>>>>>> Start Evaluation >>>>>>>>>>>>>>>>')
     batch_time = AverageMeter()
     intersection_meter = AverageMeter()
@@ -234,16 +276,17 @@ def test(model, criterion, names, test_transform_set):
                 test_transform = test_transform_set[aug_id]
 
                 if os.path.isfile(pred_save_path) and os.path.isfile(label_save_path):
-                    #logger.info('{}/{}: {}, loaded pred and label.'.format(idx + 1, len(data_list), item))
+                    logger.info('{}/{}: {}, loaded pred and label.'.format(idx + 1, len(data_list), item))
                     pred, label = np.load(pred_save_path), np.load(label_save_path)
                 else:
                     coord, feat, label, idx_data = data_load(item, test_transform)
                     pred = torch.zeros((label.size, args.classes)).cuda()
                     idx_size = len(idx_data)
-                    idx_list, coord_list, feat_list, offset_list  = [], [], [], []
-                    first_step_time = -time.time()
+                    idx_list, coord_list, feat_list, offset_list = [], [], [], []
                     for i in range(idx_size):
-                        #logger.info('{}/{}: {}/{}/{}, {}'.format(idx + 1, len(data_list), i + 1, idx_size, idx_data[0].shape[0], item))
+                        logger.info(
+                            '{}/{}: {}/{}/{}, {}'.format(idx + 1, len(data_list), i + 1, idx_size, idx_data[0].shape[0],
+                                                         item))
                         idx_part = idx_data[i]
                         coord_part, feat_part = coord[idx_part], feat[idx_part]
                         if args.voxel_max and coord_part.shape[0] > args.voxel_max:
@@ -252,24 +295,27 @@ def test(model, criterion, names, test_transform_set):
                                 init_idx = np.argmin(coord_p)
                                 dist = np.sum(np.power(coord_part - coord_part[init_idx], 2), 1)
                                 idx_crop = np.argsort(dist)[:args.voxel_max]
-                                coord_sub, feat_sub, idx_sub = coord_part[idx_crop], feat_part[idx_crop], idx_part[idx_crop]
+                                coord_sub, feat_sub, idx_sub = coord_part[idx_crop], feat_part[idx_crop], idx_part[
+                                    idx_crop]
                                 dist = dist[idx_crop]
                                 delta = np.square(1 - dist / np.max(dist))
                                 coord_p[idx_crop] += delta
                                 coord_sub, feat_sub = input_normalize(coord_sub, feat_sub)
-                                idx_list.append(idx_sub), coord_list.append(coord_sub), feat_list.append(feat_sub), offset_list.append(idx_sub.size)
+                                idx_list.append(idx_sub), coord_list.append(coord_sub), feat_list.append(
+                                    feat_sub), offset_list.append(idx_sub.size)
                                 idx_uni = np.unique(np.concatenate((idx_uni, idx_sub)))
                                 # cnt += 1; logger.info('cnt={}, idx_sub/idx={}/{}'.format(cnt, idx_uni.size, idx_part.shape[0]))
                         else:
                             coord_part, feat_part = input_normalize(coord_part, feat_part)
-                            idx_list.append(idx_part), coord_list.append(coord_part), feat_list.append(feat_part), offset_list.append(idx_part.size)
+                            idx_list.append(idx_part), coord_list.append(coord_part), feat_list.append(
+                                feat_part), offset_list.append(idx_part.size)
                     batch_num = int(np.ceil(len(idx_list) / args.batch_size_test))
-                    first_step_time += time.time()
-                    second_step_time = time.time()
                     for i in range(batch_num):
-                        batch_time2 = -time.time()
                         s_i, e_i = i * args.batch_size_test, min((i + 1) * args.batch_size_test, len(idx_list))
-                        idx_part, coord_part, feat_part, offset_part = idx_list[s_i:e_i], coord_list[s_i:e_i], feat_list[s_i:e_i], offset_list[s_i:e_i]
+                        idx_part, coord_part, feat_part, offset_part = idx_list[s_i:e_i], coord_list[
+                                                                                          s_i:e_i], feat_list[
+                                                                                                    s_i:e_i], offset_list[
+                                                                                                              s_i:e_i]
                         idx_part = np.concatenate(idx_part)
                         coord_part = torch.FloatTensor(np.concatenate(coord_part)).cuda(non_blocking=True)
                         feat_part = torch.FloatTensor(np.concatenate(feat_part)).cuda(non_blocking=True)
@@ -278,26 +324,29 @@ def test(model, criterion, names, test_transform_set):
 
                             offset_ = offset_part.clone()
                             offset_[1:] = offset_[1:] - offset_[:-1]
-                            batch = torch.cat([torch.tensor([ii]*o) for ii,o in enumerate(offset_)], 0).long().cuda(non_blocking=True)
+                            batch = torch.cat([torch.tensor([ii] * o) for ii, o in enumerate(offset_)], 0).long().cuda(
+                                non_blocking=True)
 
                             sigma = 1.0
                             radius = 2.5 * args.grid_size * sigma
-                            neighbor_idx = tp.ball_query(radius, args.max_num_neighbors, coord_part, coord_part, mode="partial_dense", batch_x=batch, batch_y=batch)[0]
+                            neighbor_idx = \
+                            tp.ball_query(radius, args.max_num_neighbors, coord_part, coord_part, mode="partial_dense",
+                                          batch_x=batch, batch_y=batch)[0]
                             neighbor_idx = neighbor_idx.cuda(non_blocking=True)
 
                             if args.concat_xyz:
                                 feat_part = torch.cat([feat_part, coord_part], 1)
 
                             pred_part = model(feat_part, coord_part, offset_part, batch, neighbor_idx)
-                            pred_part = F.softmax(pred_part, -1) # Add softmax
+                            pred_part = F.softmax(pred_part, -1)  # Add softmax
 
-                        batch_time2 += time.time()
-                        print(batch_time2)
                         torch.cuda.empty_cache()
                         pred[idx_part, :] += pred_part
-                        logger.info('Test: {}/{}, {}/{}, {}/{}, {}/{}'.format(aug_id+1, len(test_transform_set), idx + 1, len(data_list), e_i, len(idx_list), args.voxel_max, idx_part.shape[0]))
-                    second_step_time += time.time()
-                pred = pred / (pred.sum(-1)[:, None]+1e-8)
+                        logger.info(
+                            'Test: {}/{}, {}/{}, {}/{}, {}/{}'.format(aug_id + 1, len(test_transform_set), idx + 1,
+                                                                      len(data_list), e_i, len(idx_list),
+                                                                      args.voxel_max, idx_part.shape[0]))
+                pred = pred / (pred.sum(-1)[:, None] + 1e-8)
                 pred_all += pred
             pred = pred_all / len(test_transform_set)
             loss = criterion(pred, torch.LongTensor(label).cuda(non_blocking=True))  # for reference
@@ -313,8 +362,10 @@ def test(model, criterion, names, test_transform_set):
         batch_time.update(time.time() - end)
         logger.info('Test: [{}/{}]-{} '
                     'Batch {batch_time.val:.3f} ({batch_time.avg:.3f}) '
-                    'Accuracy {accuracy:.4f}.'.format(idx + 1, len(data_list), label.size, batch_time=batch_time, accuracy=accuracy))
-        pred_save.append(pred); label_save.append(label)
+                    'Accuracy {accuracy:.4f}.'.format(idx + 1, len(data_list), label.size, batch_time=batch_time,
+                                                      accuracy=accuracy))
+        pred_save.append(pred);
+        label_save.append(label)
         if not os.path.isfile(pred_save_path):
             np.save(pred_save_path, pred)
 
@@ -336,7 +387,8 @@ def test(model, criterion, names, test_transform_set):
     allAcc1 = sum(intersection_meter.sum) / (sum(target_meter.sum) + 1e-10)
 
     # calculation 2
-    intersection, union, target = intersectionAndUnion(np.concatenate(pred_save), np.concatenate(label_save), args.classes, args.ignore_label)
+    intersection, union, target = intersectionAndUnion(np.concatenate(pred_save), np.concatenate(label_save),
+                                                       args.classes, args.ignore_label)
     iou_class = intersection / (union + 1e-10)
     accuracy_class = intersection / (target + 1e-10)
     mIoU = np.mean(iou_class)
@@ -346,7 +398,8 @@ def test(model, criterion, names, test_transform_set):
     logger.info('Val1 result: mIoU/mAcc/allAcc {:.4f}/{:.4f}/{:.4f}.'.format(mIoU1, mAcc1, allAcc1))
 
     for i in range(args.classes):
-        logger.info('Class_{} Result: iou/accuracy {:.4f}/{:.4f}, name: {}.'.format(i, iou_class[i], accuracy_class[i], names[i]))
+        logger.info('Class_{} Result: iou/accuracy {:.4f}/{:.4f}, name: {}.'.format(i, iou_class[i], accuracy_class[i],
+                                                                                    names[i]))
     logger.info('<<<<<<<<<<<<<<<<< End Evaluation <<<<<<<<<<<<<<<<<')
 
 
