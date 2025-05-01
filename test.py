@@ -180,12 +180,12 @@ def data_load(data_name, transform):
     if args.voxel_size:
         coord_min = np.min(coord, 0)
         coord -= coord_min
-        idx_sort, count = proposed_voxelize(coord, args.voxel_size, mode=1)
-        idx_sort2, count2 = voxelize(coord, args.voxel_size, mode=1)
-        print("------------------")
-        print(max(count))
-        print(max(count2))
-        print("------------------")
+        #idx_sort2, count2 = proposed_voxelize(coord, args.voxel_size, mode=1)
+        idx_sort, count = voxelize(coord, args.voxel_size, mode=1)
+        #print("------------------")
+        #print(max(count))
+        #print(max(count2))
+        #print("------------------")
 
         for i in range(count.max()):
             idx_select = np.cumsum(np.insert(count, 0, 0)[0:-1]) + i % count
@@ -242,8 +242,7 @@ def test(model, criterion, names, test_transform_set):
                     idx_size = len(idx_data)
                     idx_list, coord_list, feat_list, offset_list  = [], [], [], []
                     first_step_time = -time.time()
-                    #for i in range(idx_size):
-                    for i in range(0):
+                    for i in range(idx_size):
                         #logger.info('{}/{}: {}/{}/{}, {}'.format(idx + 1, len(data_list), i + 1, idx_size, idx_data[0].shape[0], item))
                         idx_part = idx_data[i]
                         coord_part, feat_part = coord[idx_part], feat[idx_part]
@@ -267,8 +266,7 @@ def test(model, criterion, names, test_transform_set):
                     batch_num = int(np.ceil(len(idx_list) / args.batch_size_test))
                     first_step_time += time.time()
                     second_step_time = time.time()
-                    #for i in range(batch_num):
-                    for i in range(0):
+                    for i in range(batch_num):
                         batch_time2 = -time.time()
                         s_i, e_i = i * args.batch_size_test, min((i + 1) * args.batch_size_test, len(idx_list))
                         idx_part, coord_part, feat_part, offset_part = idx_list[s_i:e_i], coord_list[s_i:e_i], feat_list[s_i:e_i], offset_list[s_i:e_i]
