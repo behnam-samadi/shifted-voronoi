@@ -16,11 +16,38 @@ import torch.utils.data
 from util import config, transform
 from util.common_util import AverageMeter, intersectionAndUnion, check_makedirs
 from util.voxelize import voxelize
+from util.voxelize import proposed_voxelize
+from util.voxelize import full_fps_voxelize_on_gpu
 import torch_points_kernels as tp
 import torch.nn.functional as F
 
 random.seed(123)
 np.random.seed(123)
+
+
+
+
+import numpy as np
+from scipy.spatial import cKDTree
+
+
+def compute_point_density(coords, radius):
+    """
+    Computes density (number of neighbors within `radius`) for each point in the point cloud.
+
+    Parameters:
+    - coords: (N, 3) numpy array of point coordinates
+    - radius: float, the radius within which to count neighbors
+
+    Returns:
+    - density: (N,) numpy array, density for each point
+    """
+    tree = cKDTree(coords)
+    # Query the number of neighbors within the radius (includes self)
+    counts = tree.query_ball_point(coords, r=radius)
+    density = np.array([len(c) - 1 for c in counts])  # subtract 1 to exclude the point itself
+    return density
+
 
 
 def get_parser():
@@ -163,36 +190,45 @@ def data_prepare():
 
 import numpy as np
 
-def add_cluster_with_features(coord, feat, num_points=2000, spread=0.02, feature_mode='zero'):
+import numpy as np
+from scipy.stats import mode
+
+
+def add_cluster_with_features_and_labels(coord, feat, label, num_points=1000, spread=0.02,
+                                         feature_mode='zero', label_mode='new_class'):
     """
     Adds a cluster of points near the middle of the original coord array,
-    and adds corresponding dummy features to feat.
+    and adds corresponding dummy features and labels.
 
     Args:
         coord (np.ndarray): Original coordinates, shape (n, 3)
         feat (np.ndarray): Original features, shape (n, d)
+        label (np.ndarray): Original labels, shape (n,)
         num_points (int): Number of points to add
         spread (float): Max deviation from center in each axis
-        feature_mode (str): 'zero' (default), 'random', or 'mean'
+        feature_mode (str): 'zero', 'random', or 'mean'
+        label_mode (str): 'new_class', 'zero', or 'copy_mode'
 
     Returns:
-        new_coord (np.ndarray): Updated coordinates, shape (n + num_points, 3)
-        new_feat (np.ndarray): Updated features, shape (n + num_points, d)
-        added_cluster (np.ndarray): The newly added cluster points
-        added_features (np.ndarray): The corresponding dummy features
+        new_coord (np.ndarray)
+        new_feat (np.ndarray)
+        new_label (np.ndarray)
+        added_cluster (np.ndarray)
+        added_features (np.ndarray)
+        added_labels (np.ndarray)
     """
-    assert coord.shape[0] == feat.shape[0], "coord and feat must have the same number of rows"
-    assert coord.shape[1] == 3, "coord must be of shape (n, 3)"
+    assert coord.shape[0] == feat.shape[0] == label.shape[0], "Mismatched input lengths"
+    assert coord.shape[1] == 3, "coord must have shape (n, 3)"
 
     n, d = feat.shape
 
-    # Step 1: Find middle point in coordinate space
+    # Step 1: Compute center of coord
     center = (coord.min(axis=0) + coord.max(axis=0)) / 2
 
-    # Step 2: Generate cluster near the center
+    # Step 2: Generate cluster of new points
     added_cluster = center + np.random.uniform(-spread, spread, size=(num_points, 3))
 
-    # Step 3: Generate dummy features
+    # Step 3: Generate features
     if feature_mode == 'zero':
         added_features = np.zeros((num_points, d))
     elif feature_mode == 'random':
@@ -203,12 +239,24 @@ def add_cluster_with_features(coord, feat, num_points=2000, spread=0.02, feature
     else:
         raise ValueError(f"Unknown feature_mode: {feature_mode}")
 
-    # Step 4: Concatenate to original arrays
+    # Step 4: Generate labels
+    if label_mode == 'new_class':
+        new_label_value = label.max() + 1
+        added_labels = np.full(num_points, new_label_value)
+    elif label_mode == 'zero':
+        added_labels = np.zeros(num_points, dtype=label.dtype)
+    elif label_mode == 'copy_mode':
+        most_common = mode(label, keepdims=True).mode[0]
+        added_labels = np.full(num_points, most_common)
+    else:
+        raise ValueError(f"Unknown label_mode: {label_mode}")
+
+    # Step 5: Stack everything
     new_coord = np.vstack((coord, added_cluster))
     new_feat = np.vstack((feat, added_features))
+    new_label = np.concatenate((label, added_labels))
 
-    return new_coord, new_feat, added_cluster, added_features
-
+    return new_coord, new_feat, new_label, added_cluster, added_features, added_labels
 
 
 def data_load(data_name, transform):
@@ -221,7 +269,7 @@ def data_load(data_name, transform):
         data = torch.load(data_path)  # xyzrgbl, N*7
         coord, feat, label = data[0], data[1], data[2]
         # print("type(coord): {}".format(type(coord)))
-    coord, feat, _, _ = add_cluster_with_features(coord, feat)
+    #coord, feat, label, _, _, _ = add_cluster_with_features_and_labels(coord, feat, label)
 
     if transform:
         coord, feat = transform(coord, feat)
@@ -230,7 +278,15 @@ def data_load(data_name, transform):
     if args.voxel_size:
         coord_min = np.min(coord, 0)
         coord -= coord_min
+        #idx_sort, count = voxelize(coord, args.voxel_size, mode=1)
+        #idx_sort, count = proposed_voxelize((coord, args.voxel_size, mode=1)
+
         idx_sort, count = voxelize(coord, args.voxel_size, mode=1)
+        #idx_sort, count = full_fps_voxelize_on_gpu(coord, args.voxel_size, mode=1)
+        print("------------------")
+        print('proposed', max(count))
+        #print('baseline', max(count2))
+        print("------------------")
         for i in range(count.max()):
             idx_select = np.cumsum(np.insert(count, 0, 0)[0:-1]) + i % count
             idx_part = idx_sort[idx_select]
@@ -238,6 +294,31 @@ def data_load(data_name, transform):
     else:
         idx_data.append(np.arange(label.shape[0]))
     return coord, feat, label, idx_data
+
+
+
+
+def data_load_proposed(data_name, transform):
+    if args.data_name == 's3dis':
+        data_path = os.path.join(args.data_root, data_name + '.npy')
+        data = np.load(data_path)  # xyzrgbl, N*7
+        coord, feat, label = data[:, :3], data[:, 3:6], data[:, 6]
+    elif args.data_name == 'scannetv2':
+        data_path = os.path.join(args.data_root_val, data_name + '.pth')
+        data = torch.load(data_path)  # xyzrgbl, N*7
+        coord, feat, label = data[0], data[1], data[2]
+        # print("type(coord): {}".format(type(coord)))
+    #coord, feat, label, _, _, _ = add_cluster_with_features_and_labels(coord, feat, label)
+
+    if transform:
+        coord, feat = transform(coord, feat)
+
+    idx_data = []
+    if args.voxel_size:
+        coord_min = np.min(coord, 0)
+        coord -= coord_min
+        idx_sort, count = full_fps_voxelize_on_gpu(coord, args.voxel_size, mode=1)
+    return coord, feat, label, idx_sort
 
 
 def input_normalize(coord, feat):
@@ -280,6 +361,7 @@ def test(model, criterion, names, test_transform_set):
                     pred, label = np.load(pred_save_path), np.load(label_save_path)
                 else:
                     coord, feat, label, idx_data = data_load(item, test_transform)
+                    #coord, feat, label, idx_data = data_load_proposed(item, test_transform)
                     pred = torch.zeros((label.size, args.classes)).cuda()
                     idx_size = len(idx_data)
                     idx_list, coord_list, feat_list, offset_list = [], [], [], []

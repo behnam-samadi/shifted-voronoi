@@ -1,0 +1,39 @@
+[     0 604761 624697 611360 215938]
+[     0 604761 624697 611360 215938]
+[     0 604761 624697 611360 215938]
+[     0 604761 624697 604862 215938]
+
+[     0 604795  45781 604862 236112]
+
+
+
+random:
+Mean nearest-neighbor distance: 0.1912219991219087
+Min nearest-neighbor distance: 0.008944271909998372
+
+FPS - normal, 500 points
+Mean nearest-neighbor distance: 0.34856809501250746
+Min nearest-neighbor distance: 0.30961589106504167
+
+FPS, 1000 points, first 500 results
+Mean nearest-neighbor distance: 0.34856809501250746
+Min nearest-neighbor distance: 0.30961589106504167
+
+FPS, 1000 points, first 500 results
+Mean nearest-neighbor distance: 0.2677689588608441
+Min nearest-neighbor distance: 0.22088005795001087
+
+
+FPS, 1500 points, third 500 results
+Mean nearest-neighbor distance: 0.24757689693982768
+Min nearest-neighbor distance: 0.17891897607576443
+
+
+FPS, all points, first 500 results
+Mean nearest-neighbor distance: 0.34856809501250746
+Min nearest-neighbor distance: 0.30961589106504167
+
+
+175.0186891555786
+Mean nearest-neighbor distance: 0.24757689693982768
+Min nearest-neighbor distance: 0.17891897607576443
