@@ -40,7 +40,7 @@ def get_parser():
     return cfg
 
 
-def add_cluster_with_features_and_labels(coord, feat, label, num_points=800, spread=0.02,
+def add_cluster_with_features_and_labels(coord, feat, label, num_points=1000, spread=0.02,
                                          feature_mode='zero', label_mode='new_class'):
     """
     Adds a cluster of points near the middle of the original coord array,
@@ -240,7 +240,7 @@ def data_load(data_name, transform):
         data = torch.load(data_path)  # xyzrgbl, N*7
         coord, feat, label = data[0], data[1], data[2]
         # print("type(coord): {}".format(type(coord)))
-    coord, feat, label, _, _, _ = add_cluster_with_features_and_labels(coord, feat, label)
+    #coord, feat, label, _, _, _ = add_cluster_with_features_and_labels(coord, feat, label)
     #print("cluster added")
 
     if transform:
@@ -350,13 +350,13 @@ def data_load_proposed(data_name, transform):
         data = torch.load(data_path)  # xyzrgbl, N*7
         coord, feat, label = data[0], data[1], data[2]
         # print("type(coord): {}".format(type(coord)))
-    coord, feat, label, _, _, _ = add_cluster_with_features_and_labels(coord, feat, label)
+    #coord, feat, label, _, _, _ = add_cluster_with_features_and_labels(coord, feat, label)
     #print("cluster added")
     if transform:
         coord, feat = transform(coord, feat)
 
     idx_data = []
-    optimum_threshold = estimate_max_k(coord.shape[0], int(coord.shape[0]/10))
+    optimum_threshold = estimate_max_k(coord.shape[0], args.voxel_max)
     #optimum_threshold = calculate_threshold(coord.shape[0], args.voxel_max)
     idx_data = create_chunks(coord, optimum_threshold)
     return coord, feat, label, idx_data
@@ -417,114 +417,20 @@ def test(model, criterion, names, test_transform_set):
         else:
             # ensemble output
             pred_all = 0
-            for aug_id in range(len(test_transform_set)):
-                test_transform = test_transform_set[aug_id]
+            with open("sizes.txt", 'a') as f:
+                for aug_id in range(1):
+                    test_transform = test_transform_set[aug_id]
 
-                if os.path.isfile(pred_save_path) and os.path.isfile(label_save_path):
-                    logger.info('{}/{}: {}, loaded pred and label.'.format(idx + 1, len(data_list), item))
-                    pred, label = np.load(pred_save_path), np.load(label_save_path)
-                else:
-                    coord, feat, label, idx_data = data_load(item, test_transform)
-                    #plot_style_2(coord[::10])
-                    #coord2, feat2, label2, idx_data2 = data_load(item, test_transform)
-                    #open3d_visualization(coord, feat)
-                    pred = torch.zeros((label.size, args.classes)).cuda()
-                    idx_size = len(idx_data)
-                    idx_list, coord_list, feat_list, offset_list = [], [], [], []
-                    for i in range(idx_size):
-                        #logger.info('{}/{}: {}/{}/{}, {}'.format(idx + 1, len(data_list), i + 1, idx_size, idx_data[0].shape[0],item))
-                        idx_part = idx_data[i]
-                        coord_part, feat_part = coord[idx_part], feat[idx_part]
-                        #visualize_two_point_clouds(coord, coord_part, feat, feat_part)
-                        #visualize_two_point_clouds_overlay(coord, coord_part, feat, feat_part)
-                        #open3d_visualization(coord_part, feat_part)
-                        if args.voxel_max and coord_part.shape[0] > args.voxel_max:
-                            coord_p, idx_uni, cnt = np.random.rand(coord_part.shape[0]) * 1e-3, np.array([]), 0
-                            while idx_uni.size != idx_part.shape[0]:
-                                init_idx = np.argmin(coord_p)
-                                dist = np.sum(np.power(coord_part - coord_part[init_idx], 2), 1)
-                                idx_crop = np.argsort(dist)[:args.voxel_max]
-                                coord_sub, feat_sub, idx_sub = coord_part[idx_crop], feat_part[idx_crop], idx_part[
-                                    idx_crop]
-                                #open3d_visualization(coord_sub[::20], feat_sub[::20])
-                                dist = dist[idx_crop]
-                                delta = np.square(1 - dist / np.max(dist))
-                                coord_p[idx_crop] += delta
-                                coord_sub, feat_sub = input_normalize(coord_sub, feat_sub)
-                                idx_list.append(idx_sub), coord_list.append(coord_sub), feat_list.append(
-                                    feat_sub), offset_list.append(idx_sub.size)
-                                idx_uni = np.unique(np.concatenate((idx_uni, idx_sub)))
-                                # cnt += 1; logger.info('cnt={}, idx_sub/idx={}/{}'.format(cnt, idx_uni.size, idx_part.shape[0]))
-                        else:
-                            coord_part, feat_part = input_normalize(coord_part, feat_part)
-                            idx_list.append(idx_part), coord_list.append(coord_part), feat_list.append(
-                                feat_part), offset_list.append(idx_part.size)
-                    batch_num = int(np.ceil(len(idx_list) / args.batch_size_test))
-                    for i in range(batch_num):
-                        s_i, e_i = i * args.batch_size_test, min((i + 1) * args.batch_size_test, len(idx_list))
-                        idx_part, coord_part, feat_part, offset_part = idx_list[s_i:e_i], coord_list[
-                                                                                          s_i:e_i], feat_list[
-                                                                                                    s_i:e_i], offset_list[
-                                                                                                              s_i:e_i]
-                        idx_part = np.concatenate(idx_part)
-                        coord_part = torch.FloatTensor(np.concatenate(coord_part)).cuda(non_blocking=True)
-                        feat_part = torch.FloatTensor(np.concatenate(feat_part)).cuda(non_blocking=True)
-                        offset_part = torch.IntTensor(np.cumsum(offset_part)).cuda(non_blocking=True)
-                        with torch.no_grad():
-
-                            offset_ = offset_part.clone()
-                            offset_[1:] = offset_[1:] - offset_[:-1]
-                            batch = torch.cat([torch.tensor([ii] * o) for ii, o in enumerate(offset_)], 0).long().cuda(
-                                non_blocking=True)
-
-                            sigma = 1.0
-                            radius = 2.5 * args.grid_size * sigma
-                            neighbor_idx = \
-                            tp.ball_query(radius, args.max_num_neighbors, coord_part, coord_part, mode="partial_dense",
-                                          batch_x=batch, batch_y=batch)[0]
-                            neighbor_idx = neighbor_idx.cuda(non_blocking=True)
-
-                            if args.concat_xyz:
-                                feat_part = torch.cat([feat_part, coord_part], 1)
-
-                            pred_part = model(feat_part, coord_part, offset_part, batch, neighbor_idx)
-                            pred_part = F.softmax(pred_part, -1)  # Add softmax
-
-                        torch.cuda.empty_cache()
-                        pred[idx_part, :] += pred_part
-                        logger.info(
-                            'Test: {}/{}, {}/{}, {}/{}, {}/{}'.format(aug_id + 1, len(test_transform_set), idx + 1,
-                                                                      len(data_list), e_i, len(idx_list),
-                                                                      args.voxel_max, idx_part.shape[0]))
-                pred = pred / (pred.sum(-1)[:, None] + 1e-8)
-                pred_all += pred
-            pred = pred_all / len(test_transform_set)
-            loss = criterion(pred, torch.LongTensor(label).cuda(non_blocking=True))  # for reference
-            pred = pred.max(1)[1].data.cpu().numpy()
-
-        # calculation 1: add per room predictions
-        intersection, union, target = intersectionAndUnion(pred, label, args.classes, args.ignore_label)
-        intersection_meter.update(intersection)
-        union_meter.update(union)
-        target_meter.update(target)
-
-        accuracy = sum(intersection) / (sum(target) + 1e-10)
-        batch_time.update(time.time() - end)
-        logger.info('Test: [{}/{}]-{} '
-                    'Batch {batch_time.val:.3f} ({batch_time.avg:.3f}) '
-                    'Accuracy {accuracy:.4f}.'.format(idx + 1, len(data_list), label.size, batch_time=batch_time,
-                                                      accuracy=accuracy))
-        pred_save.append(pred);
-        label_save.append(label)
-        if not os.path.isfile(pred_save_path):
-            np.save(pred_save_path, pred)
-
-        if not os.path.isfile(label_save_path):
-            np.save(label_save_path, label)
-
-        pc_process_time += time.time()
-        with open("/home/samadi/research/tests/results/proposed/run time/times.txt", 'a') as f:
-            f.write(str(pc_process_time)+ "\n")
+                    if os.path.isfile(pred_save_path) and os.path.isfile(label_save_path):
+                        logger.info('{}/{}: {}, loaded pred and label.'.format(idx + 1, len(data_list), item))
+                        pred, label = np.load(pred_save_path), np.load(label_save_path)
+                    else:
+                        coord, feat, label, idx_data = data_load(item, test_transform)
+                        
+                        f.write(str(coord.shape[0])+"\n")
+                        print("worte size: ", str(coord.shape[0])+"\n")
+                
+    exit(0)
 
     if not os.path.exists(os.path.join(args.save_folder, "pred.pickle")):
         with open(os.path.join(args.save_folder, "pred.pickle"), 'wb') as handle:
