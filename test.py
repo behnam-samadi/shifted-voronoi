@@ -240,7 +240,7 @@ def data_load(data_name, transform):
         data = torch.load(data_path)  # xyzrgbl, N*7
         coord, feat, label = data[0], data[1], data[2]
         # print("type(coord): {}".format(type(coord)))
-    coord, feat, label, _, _, _ = add_cluster_with_features_and_labels(coord, feat, label)
+    #coord, feat, label, _, _, _ = add_cluster_with_features_and_labels(coord, feat, label)
     #print("cluster added")
 
     if transform:
@@ -340,6 +340,7 @@ def calculate_threshold(n_points, max_leaves):
     k = math.ceil(n_points / max_leaves)
     return k
 
+
 def data_load_proposed(data_name, transform):
     if args.data_name == 's3dis':
         data_path = os.path.join(args.data_root, data_name + '.npy')
@@ -349,37 +350,11 @@ def data_load_proposed(data_name, transform):
         data_path = os.path.join(args.data_root_val, data_name + '.pth')
         data = torch.load(data_path)  # xyzrgbl, N*7
         coord, feat, label = data[0], data[1], data[2]
-        # print("type(coord): {}".format(type(coord)))
-    coord, feat, label, _, _, _ = add_cluster_with_features_and_labels(coord, feat, label)
-    #print("cluster added")
+    #coord, feat, label, _, _, _ = add_cluster_with_features_and_labels(coord, feat, label)
     if transform:
         coord, feat = transform(coord, feat)
-
-    idx_data = []
     optimum_threshold = estimate_max_k(coord.shape[0], int(coord.shape[0]/10))
-    #optimum_threshold = calculate_threshold(coord.shape[0], args.voxel_max)
     idx_data = create_chunks(coord, optimum_threshold)
-    return coord, feat, label, idx_data
-
-
-    if args.voxel_size:
-        coord_min = np.min(coord, 0)
-        coord -= coord_min
-        points = torch.from_numpy(coord).to('cuda')
-
-        # Estimate max number of nodes (very rough for tqdm)
-        rough_max_nodes = 10_000
-        threshold = 100
-        with tqdm(total=rough_max_nodes, desc="Building KD-Tree") as pbar:
-            kdtree_root = build_kdtree(points, threshold, pbar=pbar)
-
-        idx_sort, count = voxelize(coord, args.voxel_size, mode=1)
-        for i in range(count.max()):
-            idx_select = np.cumsum(np.insert(count, 0, 0)[0:-1]) + i % count
-            idx_part = idx_sort[idx_select]
-            idx_data.append(idx_part)
-    else:
-        idx_data.append(np.arange(label.shape[0]))
     return coord, feat, label, idx_data
 
 
@@ -389,6 +364,53 @@ def input_normalize(coord, feat):
     if args.data_name == 's3dis':
         feat = feat / 255.
     return coord, feat
+
+def create_highlight_pc1(coord, feat, label, pred, pred_baseline):
+    # Assume coord, feat, label, pred, pred_baseline are all numpy arrays of length N
+    # Create gray color array
+    highlight_feat = np.full_like(feat, fill_value=128)
+
+    # Identify points where baseline is correct and proposed is wrong
+    mask = (pred_baseline == label) & (pred != label)
+
+    # Set those points to red
+    highlight_feat[mask] = [255, 0, 0]
+    return coord, highlight_feat
+
+
+def create_highlight_pc2(coord, feat, label, pred, pred_baseline):
+    # Create mask for the condition
+    mask = (pred_baseline == label) & (pred != label)
+
+    # Extract matching points and their original color
+    highlight_coord = coord[mask]  # shape (M, 3)
+    highlight_feat = feat[mask]  # shape (M, 3)
+    return highlight_coord, highlight_feat
+    # Combine them into a single array if desired
+    #highlight = np.hstack([highlight_coord, highlight_feat])  # shape (M, 6)
+
+
+def create_highlight_pc3(coord, feat, label, pred, pred_baseline):
+    # Create mask for points where both models are correct
+    mask = (pred_baseline == label) & (pred == label)
+
+    # Extract coordinates and features
+    correct_coord = coord[mask]  # shape (M, 3)
+    correct_feat = feat[mask]  # shape (M, 3)
+    return correct_coord, correct_feat
+
+
+def create_highlight_pc(coord, feat, label, pred, pred_baseline):
+    # Start with original colors
+    highlight_feat = feat.copy()
+
+    # Create mask for baseline correct and proposed incorrect
+    mask = (pred_baseline == label) & (pred != label)
+
+    # Set those points to red
+    highlight_feat[mask] = [255, 0, 0]
+
+    return coord, highlight_feat
 
 
 def test(model, criterion, names, test_transform_set):
@@ -404,7 +426,7 @@ def test(model, criterion, names, test_transform_set):
     check_makedirs(args.save_folder)
     pred_save, label_save = [], []
     data_list = data_prepare()
-    #data_list = data_list[3:4]
+    #data_list = data_list[28:29]
     for idx, item in enumerate(data_list):
         pc_process_time = -time.time()
         end = time.time()
@@ -424,7 +446,7 @@ def test(model, criterion, names, test_transform_set):
                     logger.info('{}/{}: {}, loaded pred and label.'.format(idx + 1, len(data_list), item))
                     pred, label = np.load(pred_save_path), np.load(label_save_path)
                 else:
-                    coord, feat, label, idx_data = data_load(item, test_transform)
+                    coord, feat, label, idx_data = data_load_proposed(item, test_transform)
                     #plot_style_2(coord[::10])
                     #coord2, feat2, label2, idx_data2 = data_load(item, test_transform)
                     #open3d_visualization(coord, feat)
@@ -500,7 +522,13 @@ def test(model, criterion, names, test_transform_set):
                 pred_all += pred
             pred = pred_all / len(test_transform_set)
             loss = criterion(pred, torch.LongTensor(label).cuda(non_blocking=True))  # for reference
+            # in order to visualize
+            #pred_baseline, label_baseline = np.load('/home/samadi/research/pythonProject/runs/s3dis_stratified_transformer/saved_when_testing/28/Area_5_office_17_53_pred.npy'), np.load('/home/samadi/research/pythonProject/runs/s3dis_stratified_transformer/saved_when_testing/28/Area_5_office_17_53_label.npy')
+            #equal = np.array_equal(label, label_baseline)
             pred = pred.max(1)[1].data.cpu().numpy()
+            #coord_highlight, feat_highlight = create_highlight_pc(coord, feat, label, pred, pred_baseline)
+            #open3d_visualization(coord_highlight, feat_highlight)
+
 
         # calculation 1: add per room predictions
         intersection, union, target = intersectionAndUnion(pred, label, args.classes, args.ignore_label)

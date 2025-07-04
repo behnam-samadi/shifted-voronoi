@@ -79,6 +79,24 @@ def ravel_hash_vec(arr):
     return keys
 
 
+def voxelize_original(coord, voxel_size=0.05, hash_type='fnv', mode=0):
+    discrete_coord = np.floor(coord / np.array(voxel_size))
+    if hash_type == 'ravel':
+        key = ravel_hash_vec(discrete_coord)
+    else:
+        key = fnv_hash_vec(discrete_coord)
+
+    idx_sort = np.argsort(key)
+    key_sort = key[idx_sort]
+    _, count = np.unique(key_sort, return_counts=True)
+    if mode == 0:  # train mode
+        idx_select = np.cumsum(np.insert(count, 0, 0)[0:-1]) + np.random.randint(0, count.max(), count.size) % count
+        idx_unique = idx_sort[idx_select]
+        return idx_unique
+    else:  # val mode
+        return idx_sort, count
+
+
 def voxelize(coord, voxel_size=0.05, hash_type='fnv', mode=0):
     discrete_coord = np.floor(coord / np.array(voxel_size))
     if hash_type == 'ravel':

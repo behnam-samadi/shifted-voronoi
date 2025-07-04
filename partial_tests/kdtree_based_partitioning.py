@@ -221,27 +221,22 @@ def create_chunks_return_list_of_lists(coord, threshold):
     chunks = round_robin(numpy_list)
     return chunks
 
-
-
-def create_chunks(coord, threshold):
-    #print("\n---------\ncreate chunks: \n")
+def proposed_grouping(coord, threshold):
     points = torch.from_numpy(coord).to('cuda')
-
     rough_max_nodes = 10_000
-    #threshold = 100
-
     with tqdm(total=rough_max_nodes, desc="Building KD-Tree") as pbar:
         kdtree_root = build_kdtree(points, threshold, pbar=pbar)
-
     leaf_indices = get_leaf_indices(kdtree_root)
     shapes = []
     for i in range(len(leaf_indices)):
         shapes.append(leaf_indices[i].shape[0])
-    #print([len(leaf) for leaf in leaf_indices])
     numpy_list = [t.cpu().numpy() for t in leaf_indices]
-    chunks = round_robin(numpy_list)
+    return numpy_list
 
+
+def create_chunks(coord, threshold):
+    numpy_list = proposed_grouping(coord, threshold)
+    chunks = round_robin(numpy_list)
     # Convert list of lists into list of NumPy arrays
     chunks = [np.array(chunk) for chunk in chunks]
-
     return chunks
