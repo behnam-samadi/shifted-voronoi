@@ -2,7 +2,7 @@ import numpy as np
 from collections import Sequence
 import torch
 from torch_geometric.nn import voxel_grid
-
+from partial_tests.kdtree_based_partitioning import *
 
 def grid_sample(pos, batch_index, size, start=None, return_p2v=True):
     # pos: float [N, 3]

@@ -63,8 +63,12 @@ TRAIN:
   print_freq: 1
   save_freq: 1
   save_path: runs/s3dis_stratified_transformer
-  weight:  # path to initial weight (default: none)
-  resume:  # path to latest checkpoint (default: none)
+  #weight: runs/s3dis_stratified_transformer/s3dis_model_best.pth
+  weight: /home/samadi/research/pythonProject/runs/s3dis_stratified_transformer/model/backup_67_epochs/model_best.pth
+  # path to initial weight (default: none)
+  #resume: runs/s3dis_stratified_transformer/s3dis_model_best.pth
+  resume: /home/samadi/research/pythonProject/runs/s3dis_stratified_transformer/model/backup_67_epochs/model_last.pth
+  # path to latest checkpoint (default: none)
   evaluate: True  # evaluate on validation set, extra gpu memory needed and small batch_size_val is recommend
   eval_freq: 1
 Distributed:

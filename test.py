@@ -446,7 +446,7 @@ def test(model, criterion, names, test_transform_set):
                     logger.info('{}/{}: {}, loaded pred and label.'.format(idx + 1, len(data_list), item))
                     pred, label = np.load(pred_save_path), np.load(label_save_path)
                 else:
-                    coord, feat, label, idx_data = data_load_proposed(item, test_transform)
+                    coord, feat, label, idx_data = data_load(item, test_transform)
                     #plot_style_2(coord[::10])
                     #coord2, feat2, label2, idx_data2 = data_load(item, test_transform)
                     #open3d_visualization(coord, feat)
