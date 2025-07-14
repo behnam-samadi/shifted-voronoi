@@ -1,0 +1,26 @@
+\section{Experiments and Results}
+
+To quantitatively assess the overlap among chunks within each point cloud, we employed two complementary metrics:
+
+\begin{itemize}
+    \item \textbf{Average Redundancy}: This metric measures the average number of chunks that each point belongs to. A value close to 1 indicates minimal overlap, whereas higher values indicate greater redundancy, i.e., points appearing in multiple chunks.
+    \item \textbf{Coverage Efficiency}: This metric represents the ratio of unique points to the total number of point references across all chunks. A value closer to 1 implies more efficient coverage with minimal overlap, while lower values indicate higher redundancy.
+\end{itemize}
+
+Table~\ref{tab:overlap_metrics} summarizes these metrics for both the baseline and the proposed methods, averaged over the 67 evaluated point clouds.
+
+\begin{table}[h]
+\centering
+\caption{Comparison of internal chunk overlap metrics between the baseline and proposed methods.}
+\label{tab:overlap_metrics}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Method} & \textbf{Average Redundancy} & \textbf{Coverage Efficiency} \\
+\midrule
+Baseline & 22.068 & 0.055 \\
+Proposed & 1.132  & 0.903 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The results clearly demonstrate that the proposed method significantly reduces chunk overlap compared to the baseline, as evidenced by the much lower average redundancy and substantially higher coverage efficiency. This indicates that the proposed chunking yields more distinct and efficient partitioning of the point clouds.
