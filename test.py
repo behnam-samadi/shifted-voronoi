@@ -283,45 +283,7 @@ def proposed_data_load_____(data_name, transform):
     return coord, feat, label, idx_data
 
 
-def estimate_max_k(N, max_leafs, min_k=1, max_k=None):
-    """
-    Estimates the maximum k such that a KD-tree built with a splitting rule
-    (splitting until number of points ≤ k) results in no more than max_leafs leaves.
-    Uses binary search over possible k values.
 
-    Parameters:
-    - N (int): Total number of points
-    - max_leafs (int): Desired max number of leaf nodes
-    - min_k (int): Lower bound of search
-    - max_k (int): Upper bound of search (optional, defaults to N)
-
-    Returns:
-    - int: Estimated max k satisfying the constraint
-    """
-    if max_k is None:
-        max_k = N
-
-    def num_leaves(n, k):
-        """Estimate number of leaves in a kd-tree recursively."""
-        if n <= k:
-            return 1
-        left = n // 2
-        right = n - left
-        return num_leaves(left, k) + num_leaves(right, k)
-
-    low, high = min_k, max_k
-    best_k = max_k
-
-    while low <= high:
-        mid_k = (low + high) // 2
-        leaves = num_leaves(N, mid_k)
-        if leaves <= max_leafs:
-            best_k = mid_k
-            high = mid_k - 1
-        else:
-            low = mid_k + 1
-
-    return best_k
 
 def calculate_threshold(n_points, max_leaves):
     """

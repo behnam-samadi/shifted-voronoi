@@ -23,8 +23,344 @@ def build_kdtree(points, threshold, depth=0, pbar=None):
     indices = torch.arange(points.shape[0], device=points.device)
     return _build_kdtree(points, indices, threshold, depth, pbar)
 
+from tqdm import tqdm
 
 def _build_kdtree(points, indices, threshold, depth=0, pbar=None):
+    n_points = points.shape[0]
+
+    # Stop recursion if <= threshold points or single point (leaf node)
+    if n_points <= threshold or n_points == 1:
+        if pbar is not None:
+            pbar.update(1)
+        return KDTreeNode(points, indices, depth)
+
+    axis = depth % 3
+    sorted_idx = points[:, axis].argsort()
+    points = points[sorted_idx]
+    indices = indices[sorted_idx]
+
+    median_idx = n_points // 2
+    median_value = points[median_idx, axis]
+
+    left_mask = points[:, axis] < median_value
+    right_mask = points[:, axis] >= median_value
+
+    left_points = points[left_mask]
+    left_indices = indices[left_mask]
+    right_points = points[right_mask]
+    right_indices = indices[right_mask]
+
+    # DEBUG prints
+    #print('##########')
+    #print('Left points:', left_points.shape)
+    #print('Right points:', right_points.shape)
+    #print('Median val:', median_value)
+    #print('##########')
+
+    # Fallback (should almost never trigger now)
+    if left_points.shape[0] == 0 or right_points.shape[0] == 0:
+        left_points = points[:median_idx]
+        left_indices = indices[:median_idx]
+        right_points = points[median_idx:]
+        right_indices = indices[median_idx:]
+        #print('Fallback triggered')
+        #print('Left points after fallback:', left_points.shape)
+        #print('Right points after fallback:', right_points.shape)
+
+    node = KDTreeNode(None, None, depth)
+    node.axis = axis
+    node.split = median_value
+
+    if left_points.shape[0] > 0:
+        node.left = _build_kdtree(left_points, left_indices, threshold, depth + 1, pbar)
+    if right_points.shape[0] > 0:
+        node.right = _build_kdtree(right_points, right_indices, threshold, depth + 1, pbar)
+    return node
+
+
+
+
+def _build_kdtree________________(points, indices, threshold, depth=0, pbar=None):
+    node = KDTreeNode(points=None, indices=None, depth=depth)  # no points in internal nodes
+
+    if points.shape[0] <= threshold:
+        # Leaf node: store points and indices
+        node.points = points
+        node.indices = indices
+        if pbar:
+            pbar.update(1)
+        return node
+
+    axis = depth % 3
+    sorted_idx = points[:, axis].argsort()
+    points = points[sorted_idx]
+    indices = indices[sorted_idx]
+
+    median_idx = len(points) // 2
+    median_val = points[median_idx, axis]
+
+    left_points = points[:median_idx]
+    left_indices = indices[:median_idx]
+    right_points = points[median_idx:]
+    right_indices = indices[median_idx:]
+
+    if pbar and depth == 0:
+        # initialize pbar total as number of leaves approx
+        pbar.total = (points.shape[0] + threshold - 1) // threshold
+        pbar.refresh()
+
+    if left_points.shape[0] > 0:
+        node.left = _build_kdtree(left_points, left_indices, threshold, depth + 1, pbar)
+    if right_points.shape[0] > 0:
+        node.right = _build_kdtree(right_points, right_indices, threshold, depth + 1, pbar)
+
+    return node
+
+
+
+
+def _build_kdtree_________(points, indices, threshold, depth=0, pbar=None):
+    n_points = points.shape[0]
+
+    # Stop recursion if <= threshold points or single point
+    if n_points <= threshold or n_points == 1:
+        return KDTreeNode(points, indices, depth)
+
+    axis = depth % 3
+    sorted_idx = points[:, axis].argsort()
+    points = points[sorted_idx]
+    indices = indices[sorted_idx]
+
+    median_idx = n_points // 2
+    median_value = points[median_idx, axis]
+
+    left_mask = points[:, axis] < median_value
+    right_mask = points[:, axis] >= median_value
+
+    left_points = points[left_mask]
+    left_indices = indices[left_mask]
+    right_points = points[right_mask]
+    right_indices = indices[right_mask]
+
+    # DEBUG prints
+    print('##########')
+    print('Left points:', left_points.shape)
+    print('Right points:', right_points.shape)
+    print('Median val:', median_value)
+    print('##########')
+
+    # Fallback (should almost never trigger now)
+    if left_points.shape[0] == 0 or right_points.shape[0] == 0:
+        left_points = points[:median_idx]
+        left_indices = indices[:median_idx]
+        right_points = points[median_idx:]
+        right_indices = indices[median_idx:]
+        print('Fallback triggered')
+        print('Left points after fallback:', left_points.shape)
+        print('Right points after fallback:', right_points.shape)
+
+    node = KDTreeNode(None, None, depth)
+    node.axis = axis
+    node.split = median_value
+
+    if left_points.shape[0] > 0:
+        node.left = _build_kdtree(left_points, left_indices, threshold, depth + 1, pbar)
+    if right_points.shape[0] > 0:
+        node.right = _build_kdtree(right_points, right_indices, threshold, depth + 1, pbar)
+
+    return node
+
+
+
+
+
+def _build_kdtree_______(points, indices, threshold, depth=0, pbar=None):
+    if points.shape[0] <= threshold:
+        return KDTreeNode(points, indices, depth)
+
+    axis = depth % 3
+    sorted_idx = points[:, axis].argsort()
+    points = points[sorted_idx]
+    indices = indices[sorted_idx]
+
+    median_idx = len(points) // 2
+    median_value = points[median_idx, axis]
+
+    # Use boolean masks
+    left_mask = points[:, axis] < median_value
+    right_mask = points[:, axis] >= median_value
+
+    left_points = points[left_mask]
+    left_indices = indices[left_mask]
+    right_points = points[right_mask]
+    right_indices = indices[right_mask]
+
+    # DEBUG prints
+    print('##########')
+    print('Left points:', left_points.shape)
+    print('Right points:', right_points.shape)
+    print('Median val:', median_value)
+    print('Points[:, axis]:', points[:, axis])
+    print('Left mask:', left_mask)
+    print('Right mask:', right_mask)
+    print('##########')
+
+    # Fallback if left_points is empty
+    if left_points.shape[0] == 0 or right_points.shape[0] == 0:
+        left_points = points[:median_idx]
+        left_indices = indices[:median_idx]
+        right_points = points[median_idx:]
+        right_indices = indices[median_idx:]
+
+        print('Fallback triggered')
+        print('Left points after fallback:', left_points.shape)
+        print('Right points after fallback:', right_points.shape)
+
+    node = KDTreeNode(None, None, depth)
+    node.axis = axis
+    node.split = median_value
+
+    if left_points.shape[0] > 0:
+        node.left = _build_kdtree(left_points, left_indices, threshold, depth + 1, pbar)
+    if right_points.shape[0] > 0:
+        node.right = _build_kdtree(right_points, right_indices, threshold, depth + 1, pbar)
+
+    return node
+
+
+
+def _build_kdtree____(points, indices, threshold, depth=0, pbar=None):
+    if points.shape[0] <= threshold:
+        return KDTreeNode(points, indices, depth)
+
+    axis = depth % 3
+    sorted_idx = points[:, axis].argsort()
+    points = points[sorted_idx]
+    indices = indices[sorted_idx]
+
+    median_idx = len(points) // 2
+    median_value = points[median_idx, axis]
+
+    # Try splitting by coordinate values:
+    left_mask = points[:, axis] < median_value
+    right_mask = points[:, axis] >= median_value
+
+    left_points = points[left_mask]
+    left_indices = indices[left_mask]
+    right_points = points[right_mask]
+    right_indices = indices[right_mask]
+
+    # If left is empty (all equal coordinates), fallback to splitting by index
+    if left_points.shape[0] == 0:
+        left_points = points[:median_idx]
+        left_indices = indices[:median_idx]
+        right_points = points[median_idx:]
+        right_indices = indices[median_idx:]
+
+    node = KDTreeNode(None, None, depth)
+    node.axis = axis
+    node.split = median_value
+
+    print('##########')
+    print(left_points.shape)
+    print(right_points.shape)
+    print('##########')
+
+    if left_points.shape[0] > 0:
+        node.left = _build_kdtree(left_points, left_indices, threshold, depth + 1, pbar)
+    if right_points.shape[0] > 0:
+        node.right = _build_kdtree(right_points, right_indices, threshold, depth + 1, pbar)
+
+    return node
+
+
+
+
+
+def _build_kdtree___(points, indices, threshold, depth=0, pbar=None):
+    # If number of points less than or equal threshold, create leaf node storing these points
+    if points.shape[0] <= threshold:
+        return KDTreeNode(points, indices, depth)  # leaf node stores points
+
+    axis = depth % 3
+    sorted_idx = points[:, axis].argsort()
+    points = points[sorted_idx]
+    indices = indices[sorted_idx]
+
+    median_idx = len(points) // 2
+    median_value = points[median_idx, axis]  # coordinate along split axis
+
+    # Create internal node WITHOUT points, only store axis and split value (if needed)
+    node = KDTreeNode(None, None, depth)  # You can modify KDTreeNode to accept split axis & value
+
+    # Split points:
+    # Left child: points with axis < median_value
+    left_mask = points[:, axis] < median_value
+    left_points = points[left_mask]
+    left_indices = indices[left_mask]
+
+    # Right child: points with axis >= median_value (includes median point)
+    right_mask = points[:, axis] >= median_value
+    right_points = points[right_mask]
+    right_indices = indices[right_mask]
+
+    print('##########')
+    print(left_points.shape)
+    print(right_points.shape)
+    print('##########')
+
+    # Build children recursively
+    if left_points.shape[0] > 0:
+        node.left = _build_kdtree(left_points, left_indices, threshold, depth + 1, pbar)
+    if right_points.shape[0] > 0:
+        node.right = _build_kdtree(right_points, right_indices, threshold, depth + 1, pbar)
+
+    # You may want to store split axis and median_value on node for searching later:
+    node.axis = axis
+    node.split = median_value
+
+    return node
+
+
+
+def _build_kdtree__(points, indices, threshold, depth=0, pbar=None):
+    node = KDTreeNode(points, indices, depth)
+
+    if points.shape[0] <= threshold:
+        return node
+
+    axis = depth % 3
+    sorted_idx = points[:, axis].argsort()
+    points = points[sorted_idx]
+    indices = indices[sorted_idx]
+
+    median_idx = len(points) // 2
+
+    # Include median point in right child by default
+    left_points, right_points = points[:median_idx], points[median_idx:]
+    left_indices, right_indices = indices[:median_idx], indices[median_idx:]
+
+    # Avoid infinite recursion if right_points size doesn't shrink
+    if right_points.shape[0] == points.shape[0]:
+        # Put median point in left child instead
+        left_points, right_points = points[median_idx:], points[:median_idx]
+        left_indices, right_indices = indices[median_idx:], indices[:median_idx]
+
+    print('------------')
+    print(left_points.shape)
+    print(right_points.shape)
+    print('------------')
+    print()
+
+    if left_points.shape[0] > 0:
+        node.left = _build_kdtree(left_points, left_indices, threshold, depth + 1, pbar)
+    if right_points.shape[0] > 0:
+        node.right = _build_kdtree(right_points, right_indices, threshold, depth + 1, pbar)
+
+    return node
+
+
+def _build_kdtree_(points, indices, threshold, depth=0, pbar=None):
     node = KDTreeNode(points, indices, depth)
 
     if points.shape[0] <= threshold:
@@ -222,10 +558,9 @@ def create_chunks_return_list_of_lists(coord, threshold):
     return chunks
 
 def proposed_grouping(coord, threshold):
-    points = torch.from_numpy(coord).to('cuda')
     rough_max_nodes = 10_000
     with tqdm(total=rough_max_nodes, desc="Building KD-Tree") as pbar:
-        kdtree_root = build_kdtree(points, threshold, pbar=pbar)
+        kdtree_root = build_kdtree(coord, threshold, pbar=pbar)
     leaf_indices = get_leaf_indices(kdtree_root)
     shapes = []
     for i in range(len(leaf_indices)):
@@ -235,8 +570,64 @@ def proposed_grouping(coord, threshold):
 
 
 def create_chunks(coord, threshold):
+    points = torch.from_numpy(coord).to('cuda')
+    numpy_list = proposed_grouping(points, threshold)
+    chunks = round_robin(numpy_list)
+    # Convert list of lists into list of NumPy arrays
+    chunks = [np.array(chunk) for chunk in chunks]
+    return chunks
+
+
+def downsample_for_train(coord, threshold):
     numpy_list = proposed_grouping(coord, threshold)
     chunks = round_robin(numpy_list)
     # Convert list of lists into list of NumPy arrays
     chunks = [np.array(chunk) for chunk in chunks]
     return chunks
+
+
+
+def estimate_max_k(N, max_leafs, min_k=1, max_k=None):
+    """
+    Estimates the maximum k such that a KD-tree built with a splitting rule
+    (splitting until number of points ≤ k) results in no more than max_leafs leaves.
+    Uses binary search over possible k values.
+
+    Parameters:
+    - N (int): Total number of points
+    - max_leafs (int): Desired max number of leaf nodes
+    - min_k (int): Lower bound of search
+    - max_k (int): Upper bound of search (optional, defaults to N)
+
+    Returns:
+    - int: Estimated max k satisfying the constraint
+    """
+    if max_k is None:
+        max_k = N
+
+    def num_leaves(n, k):
+        """Estimate number of leaves in a kd-tree recursively."""
+        if n <= k:
+            return 1
+        left = n // 2
+        right = n - left
+        return num_leaves(left, k) + num_leaves(right, k)
+
+    low, high = min_k, max_k
+    best_k = max_k
+
+    while low <= high:
+        mid_k = (low + high) // 2
+        leaves = num_leaves(N, mid_k)
+        if leaves <= max_leafs:
+            best_k = mid_k
+            high = mid_k - 1
+        else:
+            low = mid_k + 1
+
+    return best_k
+
+
+
+
+

@@ -108,6 +108,9 @@ def voxelize(coord, voxel_size=0.05, hash_type='fnv', mode=0):
     key_sort = key[idx_sort]
     _, count = np.unique(key_sort, return_counts=True)
     if mode == 0:  # train mode
+        optimum_threshold = estimate_max_k(coord.shape[0], int(coord.shape[0] / 10))
+        idx_data = downsample_for_train(coord, optimum_threshold)
+
         idx_select = np.cumsum(np.insert(count, 0, 0)[0:-1]) + np.random.randint(0, count.max(), count.size) % count
         idx_unique = idx_sort[idx_select]
         return idx_unique

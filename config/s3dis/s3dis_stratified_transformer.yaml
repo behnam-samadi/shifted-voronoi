@@ -63,11 +63,11 @@ TRAIN:
   print_freq: 1
   save_freq: 1
   save_path: runs/s3dis_stratified_transformer
-  #weight: runs/s3dis_stratified_transformer/s3dis_model_best.pth
-  weight: /home/samadi/research/pythonProject/runs/s3dis_stratified_transformer/model/backup_67_epochs/model_best.pth
+  weight: runs/s3dis_stratified_transformer/s3dis_model_best.pth
+  #weight: /home/samadi/research/pythonProject/runs/s3dis_stratified_transformer/model/backup_67_epochs/model_best.pth
   # path to initial weight (default: none)
   #resume: runs/s3dis_stratified_transformer/s3dis_model_best.pth
-  resume: /home/samadi/research/pythonProject/runs/s3dis_stratified_transformer/model/backup_67_epochs/model_last.pth
+  resume: /home/samadi/research/pythonProject/runs/s3dis_stratified_transformer/model/model_last.pth
   # path to latest checkpoint (default: none)
   evaluate: True  # evaluate on validation set, extra gpu memory needed and small batch_size_val is recommend
   eval_freq: 1
@@ -86,6 +86,9 @@ TEST:
   test_workers: 4
   batch_size_test: 4
   model_path: runs/s3dis_stratified_transformer/s3dis_model_best.pth
+  #model_path: /home/samadi/research/pythonProject/runs/s3dis_stratified_transformer/s3dis_model_best.pth
+  #model_path: /home/samadi/research/pythonProject/runs/s3dis_stratified_transformer/model/model_last.pth
+  #model_path: /home/samadi/research/pythonProject/runs/s3dis_stratified_transformer/model/backup_67_epochs/model_best.pth
   # Fill the path of the trained .pth file model
   save_folder: /home/samadi/research/pythonProject/runs/s3dis_stratified_transformer/saved_when_testing
   # Fill the path to store the .npy files for each scene

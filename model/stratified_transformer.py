@@ -430,12 +430,12 @@ class Stratified(nn.Module):
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))]  # stochastic depth decay rule
 
         if stem_transformer:
-            self.stem_layer = nn.ModuleList([
+            self.item_layer = nn.ModuleList([
                 KPConvSimpleBlock(3 if not concat_xyz else 6, channels[0], prev_grid_size, sigma=sigma)
             ])
             self.layer_start = 0
         else:
-            self.stem_layer = nn.ModuleList([
+            self.item_layer = nn.ModuleList([
                 KPConvSimpleBlock(3 if not concat_xyz else 6, channels[0], prev_grid_size, sigma=sigma),
                 KPConvResBlock(channels[0], channels[0], prev_grid_size, sigma=sigma)
             ])
@@ -468,7 +468,7 @@ class Stratified(nn.Module):
         xyz_stack = []
         offset_stack = []
 
-        for i, layer in enumerate(self.stem_layer):
+        for i, layer in enumerate(self.item_layer):
             feats = layer(feats, xyz, batch, neighbor_idx)
 
         feats = feats.contiguous()
