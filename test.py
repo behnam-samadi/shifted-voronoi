@@ -19,6 +19,7 @@ from util.voxelize import voxelize
 import torch_points_kernels as tp
 import torch.nn.functional as F
 from partial_tests.kdtree_based_partitioning import *
+from partial_tests.octree_based_partitioning import *
 import numpy as np
 import math
 from scipy.stats import mode
@@ -283,6 +284,54 @@ def proposed_data_load_____(data_name, transform):
     return coord, feat, label, idx_data
 
 
+
+def estimate_max_k_octree(N, max_leafs, min_k=1, max_k=None):
+    """
+    Estimates the maximum k such that an Octree built with a splitting rule
+    (splitting until number of points ≤ k) results in no more than max_leafs leaves.
+    Uses binary search over possible k values.
+
+    Parameters:
+    - N (int): Total number of points
+    - max_leafs (int): Desired max number of leaf nodes
+    - min_k (int): Lower bound of search
+    - max_k (int): Upper bound of search (optional, defaults to N)
+
+    Returns:
+    - int: Estimated max k satisfying the constraint
+    """
+    if max_k is None:
+        max_k = N
+
+    def num_leaves(n, k):
+        """Estimate number of leaves in an octree recursively."""
+        if n <= k:
+            return 1
+        # distribute points across up to 8 children
+        base = n // 8
+        rem = n % 8
+        leaves = 0
+        for i in range(8):
+            child_n = base + (1 if i < rem else 0)
+            if child_n > 0:
+                leaves += num_leaves(child_n, k)
+        return leaves
+
+    low, high = min_k, max_k
+    best_k = max_k
+
+    while low <= high:
+        mid_k = (low + high) // 2
+        leaves = num_leaves(N, mid_k)
+        if leaves <= max_leafs:
+            best_k = mid_k
+            high = mid_k - 1
+        else:
+            low = mid_k + 1
+
+    return best_k
+
+
 def estimate_max_k(N, max_leafs, min_k=1, max_k=None):
     """
     Estimates the maximum k such that a KD-tree built with a splitting rule
@@ -356,6 +405,24 @@ def data_load_proposed(data_name, transform):
     optimum_threshold = estimate_max_k(coord.shape[0], int(coord.shape[0]/10))
     idx_data = create_chunks(coord, optimum_threshold)
     return coord, feat, label, idx_data
+
+
+def data_load_proposed_octree(data_name, transform):
+    if args.data_name == 's3dis':
+        data_path = os.path.join(args.data_root, data_name + '.npy')
+        data = np.load(data_path)  # xyzrgbl, N*7
+        coord, feat, label = data[:, :3], data[:, 3:6], data[:, 6]
+    elif args.data_name == 'scannetv2':
+        data_path = os.path.join(args.data_root_val, data_name + '.pth')
+        data = torch.load(data_path)  # xyzrgbl, N*7
+        coord, feat, label = data[0], data[1], data[2]
+    #coord, feat, label, _, _, _ = add_cluster_with_features_and_labels(coord, feat, label)
+    if transform:
+        coord, feat = transform(coord, feat)
+    optimum_threshold = estimate_max_k_octree(coord.shape[0], int(coord.shape[0]/10))
+    idx_data = create_chunks_octree(coord, optimum_threshold)
+    return coord, feat, label, idx_data
+
 
 
 def input_normalize(coord, feat):
