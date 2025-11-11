@@ -344,7 +344,7 @@ def proposed_grouping(coord, threshold):
     return numpy_list
 
 
-def create_chunks(coord, threshold):
+def create_chunks_octree(coord, threshold):
     numpy_list = proposed_grouping(coord, threshold)
     chunks = round_robin(numpy_list)
     # Convert list of lists into list of NumPy arrays

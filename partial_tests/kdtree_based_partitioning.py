@@ -1,6 +1,11 @@
 import numpy as np
 import torch
 from tqdm import tqdm
+import time
+
+import networkx as nx
+#import nxmetis # pip install networkx-metis
+from sklearn.neighbors import NearestNeighbors
 
 
 class KDTreeNode:
@@ -39,13 +44,18 @@ def _build_kdtree(points, indices, threshold, depth=0, pbar=None):
     left_points, right_points = points[:median_idx], points[median_idx:]
     left_indices, right_indices = indices[:median_idx], indices[median_idx:]
 
+
+    #random_number = np.random.rand()
+    #if random_number < 0.02:
+        #threshold = int(threshold * 0.80)
+        #print("Threshold reduced to ", str(threshold))
+
     if left_points.shape[0] > 0:
         node.left = _build_kdtree(left_points, left_indices, threshold, depth + 1, pbar)
     if right_points.shape[0] > 0:
         node.right = _build_kdtree(right_points, right_indices, threshold, depth + 1, pbar)
 
     return node
-
 
 def collect_leaves(node, leaf_stats):
     if node.is_leaf():
@@ -235,8 +245,11 @@ def proposed_grouping(coord, threshold):
 
 
 def create_chunks(coord, threshold):
+    current_time = str(time.time())
     numpy_list = proposed_grouping(coord, threshold)
+    #np.save("/home/samadi/research/tests/tree_structures/"+current_time+"_leaves.npy", numpy_list)
     chunks = round_robin(numpy_list)
+    #np.save("/home/samadi/research/tests/tree_structures/"+current_time+"_chunks.npy", chunks)
     # Convert list of lists into list of NumPy arrays
     chunks = [np.array(chunk) for chunk in chunks]
     return chunks

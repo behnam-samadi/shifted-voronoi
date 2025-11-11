@@ -177,7 +177,7 @@ def plot_pc(pc, second_pc=None, s=4, o=0.6):
     fig.show()
 
 
-def open3d_visualization(coord, feat=None):
+def open3d_visualization_(coord, feat=None):
     """
     Visualize a point cloud using Open3D.
 
@@ -205,6 +205,97 @@ def open3d_visualization(coord, feat=None):
     # Visualize
     o3d.visualization.draw_geometries([pcd])
 
+import numpy as np
+import open3d as o3d
+
+import numpy as np
+import open3d as o3d
+
+def open3d_visualization(coord, feat=None, offset_scale=0.9):
+    """
+    Visualize a point cloud using Open3D.
+
+    Parameters:
+    - coord: (N, 3) numpy array of XYZ coordinates.
+    - feat: (N, 3) numpy array of RGB colors in range [0, 1]. Optional.
+    - offset_scale: float, controls how far the camera starts from the middle
+                    along the view direction (try between 0.2 and 1.0).
+    """
+    if coord.ndim != 2 or coord.shape[1] != 3:
+        raise ValueError("coord must be of shape (N, 3)")
+
+    if feat is not None:
+        if feat.shape != coord.shape:
+            raise ValueError("feat must be the same shape as coord")
+        if feat.max() > 1.0:
+            feat = feat / 255.0
+    else:
+        feat = np.tile([0.5, 0.5, 0.5], (coord.shape[0], 1))
+
+    # Create point cloud
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(coord)
+    pcd.colors = o3d.utility.Vector3dVector(feat)
+
+    vis = o3d.visualization.Visualizer()
+    vis.create_window()
+    vis.add_geometry(pcd)
+    ctr = vis.get_view_control()
+
+    # Compute bounding box and center
+    bbox_min = pcd.get_min_bound()
+    bbox_max = pcd.get_max_bound()
+    center = pcd.get_center()
+    diag = np.linalg.norm(bbox_max - bbox_min)
+
+    # Camera from +X looking toward center (you can flip to -X if needed)
+    eye = center + np.array([1.0, 0.0, 0.0]) * diag * offset_scale
+    up = np.array([0.0, 0.0, 1.0])
+
+    # Set camera
+    ctr.set_lookat(center)
+    ctr.set_front((center - eye) / np.linalg.norm(center - eye))
+    ctr.set_up(up)
+
+    vis.run()
+    vis.destroy_window()
+
+
+
+
+import numpy as np
+import open3d as o3d
+
+def open3d_highlight_indices(coord, indices):
+    """
+    Visualize a point cloud with specific points highlighted in red.
+
+    Parameters:
+    - coord: (N, 3) numpy array of XYZ coordinates.
+    - indices: list or numpy array of point indices to highlight.
+    """
+    if coord.ndim != 2 or coord.shape[1] != 3:
+        raise ValueError("coord must be of shape (N, 3)")
+
+    if not isinstance(indices, (list, np.ndarray)):
+        raise ValueError("indices must be a list or numpy array")
+
+    indices = np.array(indices, dtype=int)
+    if np.any(indices < 0) or np.any(indices >= coord.shape[0]):
+        raise ValueError("indices contain invalid point indices")
+
+    # Default all points to gray
+    colors = np.tile([0.5, 0.5, 0.5], (coord.shape[0], 1))
+    # Highlight selected indices in red
+    colors[indices] = [1.0, 0.0, 0.0]
+
+    # Create point cloud
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(coord)
+    pcd.colors = o3d.utility.Vector3dVector(colors)
+
+    # Visualize
+    o3d.visualization.draw_geometries([pcd])
 
 
 

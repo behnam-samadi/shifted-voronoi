@@ -29,7 +29,6 @@ import numpy as np
 import math
 from scipy.stats import mode
 from visualization import *
-DOWNSAMPLE_RATE_FOR_CHUNKING = float(os.getenv("DOWNSAMPLE_RATE_FOR_CHUNKING", 0.1))
 random.seed(123)
 np.random.seed(123)
 
@@ -396,46 +395,6 @@ def calculate_threshold(n_points, max_leaves):
     return k
 
 
-def labels_to_colors(labels, num_classes=None, colormap=None):
-    """
-    Convert integer labels into RGB colors for visualization.
-
-    Parameters:
-    - labels: (N,) numpy array of int labels.
-    - num_classes: int, total number of distinct classes (optional, inferred if None).
-    - colormap: (num_classes, 3) array of RGB colors in [0,1] (optional).
-
-    Returns:
-    - feats: (N, 3) numpy array of RGB colors in [0,1].
-    """
-
-    labels = np.asarray(labels).astype(int)
-    if labels.ndim != 1:
-        raise ValueError("labels must be a 1D array of integers")
-
-    if num_classes is None:
-        num_classes = labels.max() + 1
-
-    # If no colormap given, generate fixed or random colors
-    if colormap is None:
-        # Use a visually distinct colormap from matplotlib (if available)
-        try:
-            import matplotlib.pyplot as plt
-            cmap = plt.get_cmap("tab20", num_classes)  # up to 20 distinct colors
-            colormap = cmap(np.arange(num_classes))[:, :3]  # RGB only
-        except ImportError:
-            # fallback: evenly spaced random colors
-            np.random.seed(42)
-            colormap = np.random.rand(num_classes, 3)
-
-    # Assign colors by label index
-    feats = colormap[labels % num_classes]
-
-    return feats
-
-
-
-
 def data_load_proposed(data_name, transform):
     if args.data_name == 's3dis':
         data_path = os.path.join(args.data_root, data_name + '.npy')
@@ -448,14 +407,12 @@ def data_load_proposed(data_name, transform):
     #coord, feat, label, _, _, _ = add_cluster_with_features_and_labels(coord, feat, label)
     if transform:
         coord, feat = transform(coord, feat)
-    colors = labels_to_colors(label)
-    #open3d_visualization(coord, colors)
-    optimum_threshold = estimate_max_k(coord.shape[0], int(coord.shape[0]*DOWNSAMPLE_RATE_FOR_CHUNKING))
-    #print(optimum_threshold)
-    idx_data, grouping = create_chunks(coord, optimum_threshold)
-    #open3d_visualization(coord[grouping[0]], feat[grouping[0]])
-    #open3d_highlight_indices(coord,grouping[0])
-    return coord, feat, label, idx_data, grouping
+    optimum_threshold = estimate_max_k(coord.shape[0], int(coord.shape[0]/10))
+    # print(optimum_threshold)
+    # with open("/home/samadi/research/tests/ablation_study/bucket_size.txt", 'a') as f:
+    #     f.write(str(optimum_threshold) + "\n")
+    idx_data = create_chunks(coord, optimum_threshold)
+    return coord, feat, label, idx_data
 
 
 
@@ -472,8 +429,8 @@ def data_load_proposed_fake_points(data_name, transform):
     if transform:
         coord, feat = transform(coord, feat)
 
-    optimum_threshold = estimate_max_k(coord.shape[0], int(coord.shape[0] * DOWNSAMPLE_RATE_FOR_CHUNKING))
-    chunks, new_coord, new_feat, grouping = create_chunks(coord, feat, optimum_threshold)
+    optimum_threshold = estimate_max_k(coord.shape[0], int(coord.shape[0] / 10))
+    chunks, new_coord, new_feat = create_chunks(coord, feat, optimum_threshold)
 
     return new_coord, new_feat, label, chunks
 
@@ -491,7 +448,7 @@ def data_load_proposed_octree(data_name, transform):
     #coord, feat, label, _, _, _ = add_cluster_with_features_and_labels(coord, feat, label)
     if transform:
         coord, feat = transform(coord, feat)
-    optimum_threshold = estimate_max_k_octree(coord.shape[0], int(coord.shape[0]*DOWNSAMPLE_RATE_FOR_CHUNKING))
+    optimum_threshold = estimate_max_k_octree(coord.shape[0], int(coord.shape[0]/10))
     idx_data = create_chunks_octree(coord, optimum_threshold)
     return coord, feat, label, idx_data
 
@@ -551,97 +508,8 @@ def create_highlight_pc(coord, feat, label, pred, pred_baseline):
 
     return coord, highlight_feat
 
-def draw_three_chunks():
-    base_path = "/home/samadi/research/tests/paper_images/compare_chunks/"
 
-    baseline_coord = np.load(base_path + "baseline_coord.npy")
-    baseline_feat = np.load(base_path + "baseline_feat.npy")
-
-    proposed_coord = np.load(base_path + "proposed_coord.npy")
-    proposed_feat = np.load(base_path + "proposed_feat.npy")
-
-    proposed_variance_coord = np.load(base_path + "proposed_variance_coord.npy")
-    proposed_variance_feat = np.load(base_path + "proposed_variance_feat.npy")
-
-    # ==============================
-    # Normalize features
-    # ==============================
-    def normalize_feat(feat):
-        feat = np.asarray(feat)
-        if feat.max() > 1.0:
-            feat = feat / 255.0
-        return feat
-
-    baseline_feat = normalize_feat(baseline_feat)
-    proposed_feat = normalize_feat(proposed_feat)
-    proposed_variance_feat = normalize_feat(proposed_variance_feat)
-
-    # ==============================
-    # Create Open3D point clouds
-    # ==============================
-    def make_pcd(coord, feat):
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(coord)
-        pcd.colors = o3d.utility.Vector3dVector(feat)
-        return pcd
-
-    pcd_baseline = make_pcd(baseline_coord, baseline_feat)
-    pcd_proposed = make_pcd(proposed_coord, proposed_feat)
-    pcd_variance = make_pcd(proposed_variance_coord, proposed_variance_feat)
-
-    # ==============================
-    # Compute bounding box for scaling offset
-    # ==============================
-    bbox = pcd_baseline.get_axis_aligned_bounding_box()
-    bbox_extent = bbox.get_extent()
-    offset_dist = bbox_extent[0] * 2.5  # 2.5x bounding box width apart
-
-    # ==============================
-    # Translate for side-by-side comparison
-    # ==============================
-    pcd_baseline.translate([-offset_dist, 0, 0])
-    pcd_variance.translate([offset_dist, 0, 0])
-
-    # ==============================
-    # Optional: give distinct uniform colors
-    # (useful if feat colors are similar)
-    # ==============================
-    # pcd_baseline.paint_uniform_color([1, 0, 0])   # red
-    # pcd_proposed.paint_uniform_color([0, 1, 0])   # green
-    # pcd_variance.paint_uniform_color([0, 0, 1])   # blue
-
-    # ==============================
-    # Add coordinate frames for reference
-    # ==============================
-    frame_baseline = o3d.geometry.TriangleMesh.create_coordinate_frame(size=bbox_extent[0] / 4)
-    frame_proposed = o3d.geometry.TriangleMesh.create_coordinate_frame(size=bbox_extent[0] / 4)
-    frame_variance = o3d.geometry.TriangleMesh.create_coordinate_frame(size=bbox_extent[0] / 4)
-
-    frame_baseline.translate([-offset_dist, 0, 0])
-    frame_variance.translate([offset_dist, 0, 0])
-
-    # ==============================
-    # Visualize all together
-    # ==============================
-    o3d.visualization.draw_geometries(
-        [
-            pcd_baseline,
-            pcd_proposed,
-            pcd_variance,
-            frame_baseline,
-            frame_proposed,
-            frame_variance
-        ],
-        window_name="Three Point Clouds - Side by Side Comparison",
-        width=1600,
-        height=900,
-        left=50,
-        top=50,
-        point_show_normal=False,
-    )
-
-
-def test(model, criterion, names, test_transform_set):
+def test_fake_points(model, criterion, names, test_transform_set):
     logger.info('>>>>>>>>>>>>>>>> Start Evaluation >>>>>>>>>>>>>>>>')
     batch_time = AverageMeter()
     intersection_meter = AverageMeter()
@@ -668,7 +536,7 @@ def test(model, criterion, names, test_transform_set):
             for aug_id in range(len(test_transform_set)):
                 test_transform = test_transform_set[aug_id]
 
-                coord, feat, label, idx_data, grouping = data_load_proposed(item, test_transform)
+                coord, feat, label, idx_data = data_load_proposed(item, test_transform)
                 num_real_points = len(label)  # number of true points (exclude fakes)
 
                 pred = torch.zeros((num_real_points, args.classes)).cuda()
@@ -775,9 +643,6 @@ def test(model, criterion, names, test_transform_set):
         intersection_meter.update(intersection)
         union_meter.update(union)
         target_meter.update(target)
-        iou_per_class = intersection / (union + 1e-10)  # shape: [num_classes]
-        # Mean IoU for this frame
-        miou_frame = np.mean(iou_per_class)
 
         accuracy = sum(intersection) / (sum(target) + 1e-10)
         batch_time.update(time.time() - end)
@@ -785,7 +650,7 @@ def test(model, criterion, names, test_transform_set):
             'Test: [{}/{}]-{} '
             'Batch {batch_time.val:.3f} ({batch_time.avg:.3f}) '
             'Accuracy {accuracy:.4f}.'.format(
-                idx + 1, len(data_list), label.size, batch_time=batch_time, accuracy=miou_frame
+                idx + 1, len(data_list), label.size, batch_time=batch_time, accuracy=accuracy
             )
         )
 
@@ -797,9 +662,7 @@ def test(model, criterion, names, test_transform_set):
             np.save(label_save_path, label)
 
         pc_process_time += time.time()
-        RUNTIME_LOG_PATH = os.environ.get("RUNTIME_LOG")
-        print("runtime is logged in: ", RUNTIME_LOG_PATH)
-        with open(RUNTIME_LOG_PATH, 'a') as f:
+        with open("/home/samadi/research/tests/results/proposed/run time/times.txt", 'a') as f:
             f.write(str(pc_process_time) + "\n")
 
     if not os.path.exists(os.path.join(args.save_folder, "pred.pickle")):
@@ -841,156 +704,6 @@ def test(model, criterion, names, test_transform_set):
     logger.info('<<<<<<<<<<<<<<<<< End Evaluation <<<<<<<<<<<<<<<<<')
 
 
-def test_modified_for_showing_mIoU(model, criterion, names, test_transform_set):
-    logger.info('>>>>>>>>>>>>>>>> Start Evaluation >>>>>>>>>>>>>>>>')
-    
-    batch_time = AverageMeter()
-    intersection_meter = AverageMeter()
-    union_meter = AverageMeter()
-    target_meter = AverageMeter()
-    
-    args.batch_size_test = 5
-    model.eval()
-
-    check_makedirs(args.save_folder)
-    pred_save, label_save = [], []
-    data_list = data_prepare()
-
-    for idx, item in enumerate(data_list):
-        pc_process_time = -time.time()
-        end = time.time()
-        
-        pred_save_path = os.path.join(args.save_folder, f'{item}_{args.epoch}_pred.npy')
-        label_save_path = os.path.join(args.save_folder, f'{item}_{args.epoch}_label.npy')
-
-        if os.path.isfile(pred_save_path) and os.path.isfile(label_save_path):
-            logger.info(f'{idx+1}/{len(data_list)}: {item}, loaded pred and label.')
-            pred, label = np.load(pred_save_path), np.load(label_save_path)
-        else:
-            pred_all = 0
-            for aug_id, test_transform in enumerate(test_transform_set):
-                coord, feat, label, idx_data = data_load_proposed_fake_points(item, test_transform)
-                num_real_points = len(label)
-                pred = torch.zeros((num_real_points, args.classes)).cuda()
-                
-                idx_list, coord_list, feat_list, offset_list = [], [], [], []
-                for i in range(len(idx_data)):
-                    idx_part = np.array(idx_data[i])
-                    coord_part, feat_part = coord[idx_part], feat[idx_part]
-
-                    if args.voxel_max and coord_part.shape[0] > args.voxel_max:
-                        coord_p = np.random.rand(coord_part.shape[0]) * 1e-3
-                        idx_uni = np.array([])
-                        while idx_uni.size != idx_part.shape[0]:
-                            init_idx = np.argmin(coord_p)
-                            dist = np.sum((coord_part - coord_part[init_idx])**2, axis=1)
-                            idx_crop = np.argsort(dist)[:args.voxel_max]
-                            coord_sub, feat_sub, idx_sub = coord_part[idx_crop], feat_part[idx_crop], idx_part[idx_crop]
-                            dist = dist[idx_crop]
-                            delta = np.square(1 - dist / np.max(dist))
-                            coord_p[idx_crop] += delta
-                            coord_sub, feat_sub = input_normalize(coord_sub, feat_sub)
-                            idx_list.append(idx_sub)
-                            coord_list.append(coord_sub)
-                            feat_list.append(feat_sub)
-                            offset_list.append(len(idx_sub))
-                            idx_uni = np.unique(np.concatenate((idx_uni, idx_sub)))
-                    else:
-                        coord_part, feat_part = input_normalize(coord_part, feat_part)
-                        idx_list.append(idx_part)
-                        coord_list.append(coord_part)
-                        feat_list.append(feat_part)
-                        offset_list.append(len(idx_part))
-
-                batch_num = int(np.ceil(len(idx_list) / args.batch_size_test))
-                for i in range(batch_num):
-                    s_i, e_i = i*args.batch_size_test, min((i+1)*args.batch_size_test, len(idx_list))
-                    idx_part = np.concatenate(idx_list[s_i:e_i])
-                    coord_part = torch.FloatTensor(np.concatenate(coord_list[s_i:e_i])).cuda(non_blocking=True)
-                    feat_part = torch.FloatTensor(np.concatenate(feat_list[s_i:e_i])).cuda(non_blocking=True)
-                    offset_part = torch.IntTensor(np.cumsum(offset_list[s_i:e_i])).cuda(non_blocking=True)
-
-                    with torch.no_grad():
-                        offset_ = torch.cat([offset_part[:1], offset_part[1:] - offset_part[:-1]])
-                        batch = torch.cat([torch.tensor([ii]*o) for ii, o in enumerate(offset_)]).long().cuda(non_blocking=True)
-
-                        sigma = 1.0
-                        radius = 2.5 * args.grid_size * sigma
-                        neighbor_idx = tp.ball_query(radius, args.max_num_neighbors, coord_part, coord_part, mode="partial_dense", batch_x=batch, batch_y=batch)[0].cuda(non_blocking=True)
-
-                        if args.concat_xyz:
-                            feat_part = torch.cat([feat_part, coord_part], 1)
-
-                        pred_part = model(feat_part, coord_part, offset_part, batch, neighbor_idx)
-                        pred_part = F.softmax(pred_part, -1)
-
-                    torch.cuda.empty_cache()
-
-                    # only accumulate predictions for real points
-                    real_mask = idx_part < num_real_points
-                    pred[idx_part[real_mask]] += pred_part[real_mask]
-
-                pred = pred / (pred.sum(-1, keepdims=True) + 1e-8)
-                pred_all += pred
-
-            pred = pred_all / len(test_transform_set)
-            loss = criterion(pred, torch.LongTensor(label).cuda(non_blocking=True))
-            pred = pred.max(1)[1].cpu().numpy()
-
-        # metrics
-        intersection, union, target = intersectionAndUnion(pred, label, args.classes, args.ignore_label)
-        intersection_meter.update(intersection)
-        union_meter.update(union)
-        target_meter.update(target)
-        
-        iou_per_class = intersection / (union + 1e-10)
-        miou_frame = np.mean(iou_per_class)
-        accuracy_frame = sum(intersection) / (sum(target) + 1e-10)
-
-        batch_time.update(time.time() - end)
-        logger.info(f'Test: [{idx+1}/{len(data_list)}] Batch {batch_time.val:.3f} ({batch_time.avg:.3f}) Accuracy {miou_frame:.4f}')
-
-        pred_save.append(pred)
-        label_save.append(label)
-        if not os.path.isfile(pred_save_path):
-            np.save(pred_save_path, pred)
-        if not os.path.isfile(label_save_path):
-            np.save(label_save_path, label)
-
-        pc_process_time += time.time()
-        with open("/home/samadi/research/tests/results/proposed/run time/times.txt", 'a') as f:
-            f.write(str(pc_process_time) + "\n")
-
-    # Save all predictions and labels
-    with open(os.path.join(args.save_folder, "pred.pickle"), "wb") as f:
-        pickle.dump({"pred": pred_save}, f, protocol=pickle.HIGHEST_PROTOCOL)
-    with open(os.path.join(args.save_folder, "label.pickle"), "wb") as f:
-        pickle.dump({"label": label_save}, f, protocol=pickle.HIGHEST_PROTOCOL)
-
-    # Final metrics (two calculation methods)
-    iou_class = intersection_meter.sum / (union_meter.sum + 1e-10)
-    accuracy_class = intersection_meter.sum / (target_meter.sum + 1e-10)
-    mIoU1 = np.mean(iou_class)
-    mAcc1 = np.mean(accuracy_class)
-    allAcc1 = sum(intersection_meter.sum) / (sum(target_meter.sum) + 1e-10)
-
-    # using concatenated predictions
-    intersection, union, target = intersectionAndUnion(np.concatenate(pred_save), np.concatenate(label_save), args.classes, args.ignore_label)
-    iou_class = intersection / (union + 1e-10)
-    accuracy_class = intersection / (target + 1e-10)
-    mIoU = np.mean(iou_class)
-    mAcc = np.mean(accuracy_class)
-    allAcc = sum(intersection) / (sum(target) + 1e-10)
-
-    logger.info(f'Val result: mIoU/mAcc/allAcc {mIoU:.4f}/{mAcc:.4f}/{allAcc:.4f}')
-    logger.info(f'Val1 result: mIoU/mAcc/allAcc {mIoU1:.4f}/{mAcc1:.4f}/{allAcc1:.4f}')
-
-    for i in range(args.classes):
-        logger.info(f'Class_{i} Result: iou/accuracy {iou_class[i]:.4f}/{accuracy_class[i]:.4f}, name: {names[i]}')
-
-    logger.info('<<<<<<<<<<<<<<<<< End Evaluation <<<<<<<<<<<<<<<<<')
-
-
 def save_frames(model, criterion, names, test_transform_set):
     logger.info('>>>>>>>>>>>>>>>> Start Evaluation >>>>>>>>>>>>>>>>')
     args.batch_size_test = 5
@@ -1017,7 +730,7 @@ def save_frames(model, criterion, names, test_transform_set):
                 
 
 
-def test_orig(model, criterion, names, test_transform_set):
+def test(model, criterion, names, test_transform_set):
     #save_frames(model, criterion, names, test_transform_set)
     #exit()
     logger.info('>>>>>>>>>>>>>>>> Start Evaluation >>>>>>>>>>>>>>>>')
@@ -1032,197 +745,9 @@ def test_orig(model, criterion, names, test_transform_set):
     check_makedirs(args.save_folder)
     pred_save, label_save = [], []
     data_list = data_prepare()
-
-    frame_to_show = 46
-    data_list = data_list[frame_to_show:frame_to_show+1]
-    for idx, item in enumerate(data_list):
-        pc_process_time = -time.time()
-        end = time.time()
-        pred_save_path = os.path.join(args.save_folder, '{}_{}_pred.npy'.format(item, args.epoch))
-        label_save_path = os.path.join(args.save_folder, '{}_{}_label.npy'.format(item, args.epoch))
-
-        if os.path.isfile(pred_save_path) and os.path.isfile(label_save_path):
-            logger.info('{}/{}: {}, loaded pred and label.'.format(idx + 1, len(data_list), item))
-            pred, label = np.load(pred_save_path), np.load(label_save_path)
-        else:
-            # ensemble output
-            pred_all = 0
-            for aug_id in range(len(test_transform_set)):
-                test_transform = test_transform_set[aug_id]
-
-                if os.path.isfile(pred_save_path) and os.path.isfile(label_save_path):
-                    logger.info('{}/{}: {}, loaded pred and label.'.format(idx + 1, len(data_list), item))
-                    pred, label = np.load(pred_save_path), np.load(label_save_path)
-                else:
-                    coord, feat, label, idx_data = data_load(item, test_transform)
-                    #np.savez("/home/samadi/research/tests/study_on_partitioning/"+str(idx)+"_"+str(aug_id)+"_proposed", idx_data)
-                    #plot_style_2(coord[::10])
-                    #coord2, feat2, label2, idx_data2 = data_load(item, test_transform)
-                    #open3d_visualization(coord, feat)
-                    pred = torch.zeros((label.size, args.classes)).cuda()
-                    idx_size = len(idx_data)
-                    idx_list, coord_list, feat_list, offset_list = [], [], [], []
-                    for i in range(idx_size):
-                        #logger.info('{}/{}: {}/{}/{}, {}'.format(idx + 1, len(data_list), i + 1, idx_size, idx_data[0].shape[0],item))
-                        idx_part = idx_data[i]
-                        coord_part, feat_part = coord[idx_part], feat[idx_part]
-                        #visualize_two_point_clouds(coord, coord_part, feat, feat_part)
-                        #visualize_two_point_clouds_overlay(coord, coord_part, feat, feat_part)
-                        #open3d_visualization(coord_part, feat_part)
-                        if args.voxel_max and coord_part.shape[0] > args.voxel_max:
-                            coord_p, idx_uni, cnt = np.random.rand(coord_part.shape[0]) * 1e-3, np.array([]), 0
-                            while idx_uni.size != idx_part.shape[0]:
-                                init_idx = np.argmin(coord_p)
-                                dist = np.sum(np.power(coord_part - coord_part[init_idx], 2), 1)
-                                idx_crop = np.argsort(dist)[:args.voxel_max]
-                                coord_sub, feat_sub, idx_sub = coord_part[idx_crop], feat_part[idx_crop], idx_part[
-                                    idx_crop]
-                                #open3d_visualization(coord_sub[::20], feat_sub[::20])
-                                dist = dist[idx_crop]
-                                delta = np.square(1 - dist / np.max(dist))
-                                coord_p[idx_crop] += delta
-                                coord_sub, feat_sub = input_normalize(coord_sub, feat_sub)
-                                idx_list.append(idx_sub), coord_list.append(coord_sub), feat_list.append(
-                                    feat_sub), offset_list.append(idx_sub.size)
-                                idx_uni = np.unique(np.concatenate((idx_uni, idx_sub)))
-                                # cnt += 1; logger.info('cnt={}, idx_sub/idx={}/{}'.format(cnt, idx_uni.size, idx_part.shape[0]))
-                        else:
-                            coord_part, feat_part = input_normalize(coord_part, feat_part)
-                            idx_list.append(idx_part), coord_list.append(coord_part), feat_list.append(
-                                feat_part), offset_list.append(idx_part.size)
-                    batch_num = int(np.ceil(len(idx_list) / args.batch_size_test))
-                    for i in range(batch_num):
-                        s_i, e_i = i * args.batch_size_test, min((i + 1) * args.batch_size_test, len(idx_list))
-                        idx_part, coord_part, feat_part, offset_part = idx_list[s_i:e_i], coord_list[
-                                                                                          s_i:e_i], feat_list[
-                                                                                                    s_i:e_i], offset_list[
-                                                                                                              s_i:e_i]
-                        idx_part = np.concatenate(idx_part)
-                        coord_part = torch.FloatTensor(np.concatenate(coord_part)).cuda(non_blocking=True)
-                        feat_part = torch.FloatTensor(np.concatenate(feat_part)).cuda(non_blocking=True)
-                        offset_part = torch.IntTensor(np.cumsum(offset_part)).cuda(non_blocking=True)
-                        with torch.no_grad():
-
-                            offset_ = offset_part.clone()
-                            offset_[1:] = offset_[1:] - offset_[:-1]
-                            batch = torch.cat([torch.tensor([ii] * o) for ii, o in enumerate(offset_)], 0).long().cuda(
-                                non_blocking=True)
-
-                            sigma = 1.0
-                            radius = 2.5 * args.grid_size * sigma
-                            neighbor_idx = \
-                            tp.ball_query(radius, args.max_num_neighbors, coord_part, coord_part, mode="partial_dense",
-                                          batch_x=batch, batch_y=batch)[0]
-                            neighbor_idx = neighbor_idx.cuda(non_blocking=True)
-
-                            if args.concat_xyz:
-                                feat_part = torch.cat([feat_part, coord_part], 1)
-
-                            pred_part = model(feat_part, coord_part, offset_part, batch, neighbor_idx)
-                            pred_part = F.softmax(pred_part, -1)  # Add softmax
-
-                        torch.cuda.empty_cache()
-                        pred[idx_part, :] += pred_part
-                        logger.info(
-                            'Test: {}/{}, {}/{}, {}/{}, {}/{}'.format(aug_id + 1, len(test_transform_set), idx + 1,
-                                                                      len(data_list), e_i, len(idx_list),
-                                                                      args.voxel_max, idx_part.shape[0]))
-                pred = pred / (pred.sum(-1)[:, None] + 1e-8)
-                pred_all += pred
-            pred = pred_all / len(test_transform_set)
-            loss = criterion(pred, torch.LongTensor(label).cuda(non_blocking=True))  # for reference
-            # in order to visualize
-            #pred_baseline, label_baseline = np.load('/home/samadi/research/pythonProject/runs/s3dis_stratified_transformer/saved_when_testing/28/Area_5_office_17_53_pred.npy'), np.load('/home/samadi/research/pythonProject/runs/s3dis_stratified_transformer/saved_when_testing/28/Area_5_office_17_53_label.npy')
-            #equal = np.array_equal(label, label_baseline)
-            pred = pred.max(1)[1].data.cpu().numpy()
-            #coord_highlight, feat_highlight = create_highlight_pc(coord, feat, label, pred, pred_baseline)
-            #open3d_visualization(coord_highlight, feat_highlight)
-
-
-        # calculation 1: add per room predictions
-        # Calculate per-class IoU
-        iou_per_class = intersection / (union + 1e-10)  # shape: [num_classes]
-        # Mean IoU for this frame
-        miou_frame = np.mean(iou_per_class)
-        intersection, union, target = intersectionAndUnion(pred, label, args.classes, args.ignore_label)
-        intersection_meter.update(intersection)
-        union_meter.update(union)
-        target_meter.update(target)
-
-        accuracy = sum(intersection) / (sum(target) + 1e-10)
-        batch_time.update(time.time() - end)
-        logger.info('Test: [{}/{}]-{} '
-                    'Batch {batch_time.val:.3f} ({batch_time.avg:.3f}) '
-                    'Accuracy {accuracy:.4f}.'.format(idx + 1, len(data_list), label.size, batch_time=batch_time,
-                                                      accuracy=accuracy, miou_frame = miou_frame))
-        pred_save.append(pred)
-        label_save.append(label)
-        if not os.path.isfile(pred_save_path):
-            np.save(pred_save_path, pred)
-
-        if not os.path.isfile(label_save_path):
-            np.save(label_save_path, label)
-
-        pc_process_time += time.time()
-        with open("/home/samadi/research/tests/results/proposed/run time/times.txt", 'a') as f:
-            f.write(str(pc_process_time)+ "\n")
-
-    if not os.path.exists(os.path.join(args.save_folder, "pred.pickle")):
-        with open(os.path.join(args.save_folder, "pred.pickle"), 'wb') as handle:
-            pickle.dump({'pred': pred_save}, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    if not os.path.exists(os.path.join(args.save_folder, "label.pickle")):
-        with open(os.path.join(args.save_folder, "label.pickle"), 'wb') as handle:
-            pickle.dump({'label': label_save}, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    # calculation 1
-    iou_class = intersection_meter.sum / (union_meter.sum + 1e-10)
-    accuracy_class = intersection_meter.sum / (target_meter.sum + 1e-10)
-    mIoU1 = np.mean(iou_class)
-    mAcc1 = np.mean(accuracy_class)
-    allAcc1 = sum(intersection_meter.sum) / (sum(target_meter.sum) + 1e-10)
-
-    # calculation 2
-    intersection, union, target = intersectionAndUnion(np.concatenate(pred_save), np.concatenate(label_save),
-                                                       args.classes, args.ignore_label)
-    iou_class = intersection / (union + 1e-10)
-    accuracy_class = intersection / (target + 1e-10)
-    mIoU = np.mean(iou_class)
-    mAcc = np.mean(accuracy_class)
-    allAcc = sum(intersection) / (sum(target) + 1e-10)
-    logger.info('Val result: mIoU/mAcc/allAcc {:.4f}/{:.4f}/{:.4f}.'.format(mIoU, mAcc, allAcc))
-    logger.info('Val1 result: mIoU/mAcc/allAcc {:.4f}/{:.4f}/{:.4f}.'.format(mIoU1, mAcc1, allAcc1))
-
-    for i in range(args.classes):
-        logger.info('Class_{} Result: iou/accuracy {:.4f}/{:.4f}, name: {}.'.format(i, iou_class[i], accuracy_class[i],
-                                                                                    names[i]))
-    logger.info('<<<<<<<<<<<<<<<<< End Evaluation <<<<<<<<<<<<<<<<<')
-
-
-
-
-
-
-def test_global_and_local_chunks(model, criterion, names, test_transform_set):
-    #save_frames(model, criterion, names, test_transform_set)
-    #exit()
-    logger.info('>>>>>>>>>>>>>>>> Start Evaluation >>>>>>>>>>>>>>>>')
-    batch_time = AverageMeter()
-    intersection_meter = AverageMeter()
-    union_meter = AverageMeter()
-    target_meter = AverageMeter()
-    args.batch_size_test = 5
-    # args.voxel_max = None
-    model.eval()
-
-    check_makedirs(args.save_folder)
-    pred_save, label_save = [], []
-    data_list = data_prepare()
-
     
-    data_list = data_list[0,28,45,51,66]
+    #data_list = data_list[28:29]
     for idx, item in enumerate(data_list):
-        with open("/home/samadi/research/tests/local_chunking/baseline.txt", 'a') as f:
-            f.write("--------- " + str(idx) + "--------- \n")
         pc_process_time = -time.time()
         end = time.time()
         pred_save_path = os.path.join(args.save_folder, '{}_{}_pred.npy'.format(item, args.epoch))
@@ -1241,36 +766,7 @@ def test_global_and_local_chunks(model, criterion, names, test_transform_set):
                     logger.info('{}/{}: {}, loaded pred and label.'.format(idx + 1, len(data_list), item))
                     pred, label = np.load(pred_save_path), np.load(label_save_path)
                 else:
-                    coord, feat, label, idx_data = data_load(item, test_transform)
-                    pred = torch.zeros((label.size, args.classes)).cuda()
-                    idx_size = len(idx_data)
-                    idx_list, coord_list, feat_list, offset_list = [], [], [], []
-                    for i in range(idx_size):
-                        idx_part = idx_data[i]
-                        coord_part, feat_part = coord[idx_part], feat[idx_part]
-                        if args.voxel_max and coord_part.shape[0] > args.voxel_max:
-                            with open("/home/samadi/research/tests/local_chunking/baseline.txt", 'a') as f:
-                                f.write("it was needed\n")
-                            coord_p, idx_uni, cnt = np.random.rand(coord_part.shape[0]) * 1e-3, np.array([]), 0
-                            while idx_uni.size != idx_part.shape[0]:
-                                init_idx = np.argmin(coord_p)
-                                dist = np.sum(np.power(coord_part - coord_part[init_idx], 2), 1)
-                                idx_crop = np.argsort(dist)[:args.voxel_max]
-                                coord_sub, feat_sub, idx_sub = coord_part[idx_crop], feat_part[idx_crop], idx_part[
-                                    idx_crop]
-                                dist = dist[idx_crop]
-                                delta = np.square(1 - dist / np.max(dist))
-                                coord_p[idx_crop] += delta
-                                coord_sub, feat_sub = input_normalize(coord_sub, feat_sub)
-                                idx_list.append(idx_sub), coord_list.append(coord_sub), feat_list.append(
-                                    feat_sub), offset_list.append(idx_sub.size)
-                                idx_uni = np.unique(np.concatenate((idx_uni, idx_sub)))
-                                # cnt += 1; logger.info('cnt={}, idx_sub/idx={}/{}'.format(cnt, idx_uni.size, idx_part.shape[0]))
-                        else:
-                            coord_part, feat_part = input_normalize(coord_part, feat_part)
-                            idx_list.append(idx_part), coord_list.append(coord_part), feat_list.append(
-                                feat_part), offset_list.append(idx_part.size)
-                    batch_num = int(np.ceil(len(idx_list) / args.batch_size_test))
+                    coord, feat, label, idx_data = data_load_proposed(item, test_transform)
 
 
 if __name__ == '__main__':
