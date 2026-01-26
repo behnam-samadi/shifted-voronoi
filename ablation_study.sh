@@ -2,10 +2,10 @@
 # Sequential training and cleanup script with full output logging
 
 # Create folder for logs
-mkdir -p ablation_study
+#mkdir -p ablation_study
 
 # Downsample rates to iterate over
-RATES=(0.005 0.008 0.1 0.2 0.5)
+RATES=(0.127)
 
 # Master log for all runs
 MASTER_LOG="ablation_study/all_runs_log.txt"

@@ -6,7 +6,7 @@ from timm.models.layers import DropPath, trunc_normal_
 from torch_points3d.core.common_modules import FastBatchNorm1d
 from torch_geometric.nn import voxel_grid
 from lib.pointops2.functions import pointops
-
+from model.kdtree_grouping_for_transformer import *
 
 def get_indice_pairs(p2v_map, counts, new_p2v_map, new_counts, downsample_idx, batch, xyz, window_size, i):
     # p2v_map: [n, k]
@@ -189,8 +189,19 @@ class WindowAttention(nn.Module):
 
         # # Position embedding
         relative_position = xyz[index_0] - xyz[index_1]
+
         relative_position = torch.round(relative_position * 100000) / 100000
-        relative_position_index = (relative_position + 2 * self.window_size - 0.0001) // self.quant_size
+        #relative_position_index = (relative_position + 2 * self.window_size - 0.0001) // self.quant_size
+
+
+        # Compute per-window min/max
+        rel_min = relative_position.min(dim=0, keepdim=True)[0]
+        rel_max = relative_position.max(dim=0, keepdim=True)[0]
+
+        # Shift to positive range
+        relative_position_index = (relative_position - rel_min - 1e-4) // self.quant_size
+
+
         assert (relative_position_index >= 0).all()
         assert (relative_position_index <= 2 * self.quant_grid_length - 1).all()
 
@@ -266,6 +277,99 @@ class SwinTransformerBlock(nn.Module):
         return feats
 
 
+
+
+
+def grid_sample_proposed(
+    pos,
+    batch,
+    bucket_sizes,
+    start_axis=0,
+    return_p2v=True
+):
+    """
+    pos: FloatTensor [N, 3]
+    batch: LongTensor [N]
+    bucket_sizes: list or tensor, len = num_batches
+    start_axis: int
+    """
+
+    device = pos.device
+    N = pos.shape[0]
+
+    clusters = torch.empty(N, dtype=torch.long, device=device)
+
+    all_counts = []
+    all_p2v = []
+
+    cluster_offset = 0
+    unique_batches = batch.unique(sorted=True)
+
+    for b in unique_batches:
+        mask = batch == b
+        idx = mask.nonzero(as_tuple=False).squeeze(1)
+        points = pos[idx]
+
+        threshold = bucket_sizes[int(b)]
+
+        # --- KD-tree grouping ---
+        leaf_groups = proposed_grouping(
+            points.cpu().numpy(),
+            threshold=threshold,
+            start_axis=start_axis
+        )
+        # leaf_groups: list of numpy arrays (local indices)
+
+        # --- assign cluster ids ---
+        local_cluster = torch.empty(len(idx), dtype=torch.long)
+
+        for i, g in enumerate(leaf_groups):
+            local_cluster[torch.from_numpy(g)] = i
+
+        # map to global cluster ids
+        clusters[idx] = local_cluster.to(device) + cluster_offset
+
+        if return_p2v:
+            counts = torch.tensor(
+                [len(g) for g in leaf_groups],
+                device=device,
+                dtype=torch.long
+            )
+            all_counts.append(counts)
+
+            max_k = counts.max().item()
+            p2v = torch.zeros(
+                len(leaf_groups), max_k,
+                dtype=torch.long,
+                device=device
+            )
+
+            for i, g in enumerate(leaf_groups):
+                global_idx = idx[torch.from_numpy(g)]
+                p2v[i, :len(g)] = global_idx
+
+            all_p2v.append(p2v)
+
+        cluster_offset += len(leaf_groups)
+
+    if not return_p2v:
+        return clusters
+
+    counts = torch.cat(all_counts, dim=0)
+    k = counts.max().item()
+    n = counts.shape[0]
+
+    # --- merge p2v maps ---
+    p2v_map = clusters.new_zeros(n, k)
+    offset = 0
+    for p2v, c in zip(all_p2v, all_counts):
+        p2v_map[offset:offset + p2v.shape[0], :p2v.shape[1]] = p2v
+        offset += p2v.shape[0]
+
+    return clusters, p2v_map, counts
+
+
+
 class BasicLayer(nn.Module):
     def __init__(self, downsample_scale, depth, channel, num_heads, window_size, grid_size, quant_size,
                  rel_query=True, rel_key=False, rel_value=False, drop_path=0.0, mlp_ratio=4.0, qkv_bias=True, \
@@ -286,6 +390,14 @@ class BasicLayer(nn.Module):
 
         self.downsample = downsample(channel, out_channels, ratio, k) if downsample else None
 
+
+
+    
+
+            
+
+
+
     def forward(self, feats, xyz, offset):
         # feats: N, C
         # xyz: N, 3
@@ -296,11 +408,45 @@ class BasicLayer(nn.Module):
         offset_[1:] = offset_[1:] - offset_[:-1]
         batch = torch.cat([torch.tensor([ii] * o) for ii, o in enumerate(offset_)], 0).long().cuda()
 
+
+
         v2p_map, p2v_map, counts = grid_sample(xyz, batch, window_size, start=None)
 
+        voxel_point_idx = p2v_map[:, 0]
+        voxel_batch = batch[voxel_point_idx]
+
+        num_batches = batch.max().item() + 1
+        voxel_counts = torch.bincount(voxel_batch, minlength=num_batches)
+
+        # Point counts per batch
+        point_counts = torch.bincount(batch, minlength=num_batches)
+
+        # Avoid division by zero just in case
+        voxel_counts = voxel_counts.clamp(min=1)
+
+        # Final result: points per voxel per batch
+        bucket_sizes = point_counts.float() / voxel_counts.float()
+
+        v2p_map, p2v_map, counts = grid_sample_proposed(xyz, batch, bucket_sizes, start_axis = 0)
+
+
         shift_size = 1 / 2 * window_size
-        shift_v2p_map, shift_p2v_map, shift_counts = grid_sample(xyz + shift_size, batch, window_size,
-                                                                 start=xyz.min(0)[0])
+        shift_v2p_map, shift_p2v_map, shift_counts = grid_sample_proposed(xyz, batch, bucket_sizes,
+                                                                 start_axis=1)
+
+
+        
+
+
+
+        # print("v2pmap: ", v2p_map.shape)
+        # print("p2v_map: ", p2v_map.shape)
+        # print("points size: ", xyz.shape)
+        # print("counts1: ", counts.shape)
+        # print("counts: ", shift_counts.shape)
+        # print("batch: ", batch.shape)
+
+
 
         downsample_scale = self.downsample_scale
         new_offset, count = [offset[0].item() // downsample_scale + 1], offset[0].item() // downsample_scale + 1

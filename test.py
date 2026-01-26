@@ -18,7 +18,11 @@ from util.common_util import AverageMeter, intersectionAndUnion, check_makedirs
 from util.voxelize import voxelize
 import torch_points_kernels as tp
 import torch.nn.functional as F
-from proposedGrouping.kdtree_grouping import *
+#from proposedGrouping.kdtree_grouping import *
+#from proposedGrouping.kdtree_grouping_fast_pca import *
+#from proposedGrouping.kdtree_grouping_ab_split import *
+from proposedGrouping.kdtree_grouping_diameter import *
+#from proposedGrouping.kdtree_grouping_sandwich1 import *
 #from proposedGrouping.kdtree_voronoi_grouping import *
 #from proposedGrouping.kdtree_grouping_variance import *
 #from proposedGrouping.kdtree_grouping_additional_points import *
@@ -452,7 +456,7 @@ def data_load_proposed(data_name, transform):
     #open3d_visualization(coord, colors)
     optimum_threshold = estimate_max_k(coord.shape[0], int(coord.shape[0]*DOWNSAMPLE_RATE_FOR_CHUNKING))
     #print(optimum_threshold)
-    idx_data, grouping = create_chunks(coord, optimum_threshold)
+    idx_data, grouping = create_chunks(coord, optimum_threshold, 0.09)
     #open3d_visualization(coord[grouping[0]], feat[grouping[0]])
     #open3d_highlight_indices(coord,grouping[0])
     return coord, feat, label, idx_data, grouping
@@ -653,12 +657,12 @@ def test(model, criterion, names, test_transform_set):
     check_makedirs(args.save_folder)
     pred_save, label_save = [], []
     data_list = data_prepare()
-
     for idx, item in enumerate(data_list):
         pc_process_time = -time.time()
         end = time.time()
         pred_save_path = os.path.join(args.save_folder, '{}_{}_pred.npy'.format(item, args.epoch))
         label_save_path = os.path.join(args.save_folder, '{}_{}_label.npy'.format(item, args.epoch))
+        
 
         if os.path.isfile(pred_save_path) and os.path.isfile(label_save_path):
             logger.info('{}/{}: {}, loaded pred and label.'.format(idx + 1, len(data_list), item))
